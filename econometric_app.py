@@ -405,7 +405,7 @@ def main():
                             with st.sidebar.expander(f"🔧 {filter_column}", expanded=True):
                                 
                                 # Remove filter button
-                                if st.button(f"❌ Remove", key=f"remove_{i}"):
+                                if st.button(f"❌ Remove", key=f"remove_filter_{i}"):
                                     filters_to_remove.append(i)
                                     continue
                                 
@@ -912,7 +912,7 @@ def main():
                     with col1:
                         st.write(f"📊 {var}")
                     with col2:
-                        if st.button("❌", key=f"remove_{i}", help=f"Remove {var}"):
+                        if st.button("❌", key=f"remove_var_{i}", help=f"Remove {var}"):
                             st.session_state.selected_independent.remove(var)
                             st.rerun()
             else:
