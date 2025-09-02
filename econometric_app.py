@@ -398,7 +398,6 @@ def create_interactive_tree_plot(model, feature_names, class_names=None, max_dep
         hoverlabel=dict(
             bgcolor='rgba(255,255,255,0.95)',
             bordercolor='black',
-            borderwidth=1,
             font=dict(size=12, color='black', family='Arial')
         ),
         showlegend=False
@@ -1464,12 +1463,25 @@ def main():
             if estimation_method in ["Decision Tree", "Random Forest"]:
                 st.sidebar.markdown("**Tree Parameters:**")
                 
-                max_depth = st.sidebar.selectbox(
-                    "Maximum Depth",
-                    [None, 3, 5, 10, 15, 20],
-                    index=0,
-                    help="Maximum depth of the tree (None = unlimited)"
+                # Maximum depth with flexible input
+                use_max_depth = st.sidebar.checkbox(
+                    "Limit Tree Depth",
+                    value=True,
+                    help="Limit the maximum depth of the tree (recommended for better visualization)"
                 )
+                
+                if use_max_depth:
+                    max_depth = st.sidebar.number_input(
+                        "Maximum Depth",
+                        min_value=1,
+                        max_value=25,
+                        value=5,
+                        step=1,
+                        help="Enter any integer between 1 and 25 for maximum tree depth"
+                    )
+                else:
+                    max_depth = None
+                    st.sidebar.info("⚠️ Unlimited depth may create very large trees")
                 
                 min_samples_split = st.sidebar.slider(
                     "Min Samples Split",
