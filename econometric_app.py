@@ -192,26 +192,30 @@ def create_interactive_tree_plot(model, feature_names, class_names=None, max_dep
         if level_width is None:
             level_width = {}
             
+        # Always add the current node position
+        positions[node] = (x, y)
+        
+        # Stop recursion if max_depth reached, but still record this node's position
         if max_depth is not None and level >= max_depth:
             return positions
-            
-        positions[node] = (x, y)
         
         if level not in level_width:
             level_width[level] = 0
         level_width[level] += 1
         
-        if children_left[node] != children_right[node]:  # Not a leaf
+        if int(children_left[node]) != int(children_right[node]):  # Not a leaf (convert to Python int)
             # Calculate spacing for children
             spacing = max(1.0 / (level + 1), 0.1)
             
             # Left child
             if children_left[node] >= 0:
-                get_tree_positions(children_left[node], x - spacing, y - 1, level + 1, positions, level_width)
+                left_child = int(children_left[node])  # Convert to Python int
+                get_tree_positions(left_child, x - spacing, y - 1, level + 1, positions, level_width)
             
             # Right child
             if children_right[node] >= 0:
-                get_tree_positions(children_right[node], x + spacing, y - 1, level + 1, positions, level_width)
+                right_child = int(children_right[node])  # Convert to Python int
+                get_tree_positions(right_child, x + spacing, y - 1, level + 1, positions, level_width)
         
         return positions
     
@@ -227,18 +231,24 @@ def create_interactive_tree_plot(model, feature_names, class_names=None, max_dep
             continue
             
         if children_left[node] >= 0:  # Has left child
-            x0, y0 = positions[node]
-            x1, y1 = positions[children_left[node]]
-            edge_x.extend([x0, x1, None])
-            edge_y.extend([y0, y1, None])
-            edge_info.extend(['True', 'True', None])
+            left_child = int(children_left[node])  # Convert to Python int
+            # Only create edge if child position exists
+            if left_child in positions:
+                x0, y0 = positions[node]
+                x1, y1 = positions[left_child]
+                edge_x.extend([x0, x1, None])
+                edge_y.extend([y0, y1, None])
+                edge_info.extend(['True', 'True', None])
         
         if children_right[node] >= 0:  # Has right child
-            x0, y0 = positions[node]
-            x1, y1 = positions[children_right[node]]
-            edge_x.extend([x0, x1, None])
-            edge_y.extend([y0, y1, None])
-            edge_info.extend(['False', 'False', None])
+            right_child = int(children_right[node])  # Convert to Python int
+            # Only create edge if child position exists
+            if right_child in positions:
+                x0, y0 = positions[node]
+                x1, y1 = positions[right_child]
+                edge_x.extend([x0, x1, None])
+                edge_y.extend([y0, y1, None])
+                edge_info.extend(['False', 'False', None])
     
     # Create nodes
     node_x = []
@@ -256,12 +266,12 @@ def create_interactive_tree_plot(model, feature_names, class_names=None, max_dep
         node_y.append(y)
         
         # Node information
-        samples = n_node_samples[node]
-        impurity_val = impurity[node]
+        samples = int(n_node_samples[node])  # Convert to Python int
+        impurity_val = float(impurity[node])  # Convert to Python float
         
-        if children_left[node] == children_right[node]:  # Leaf node
+        if int(children_left[node]) == int(children_right[node]):  # Leaf node (convert to Python int)
             if class_names is not None:  # Classification
-                predicted_class = np.argmax(value[node][0])
+                predicted_class = int(np.argmax(value[node][0]))  # Convert to Python int
                 class_probs = value[node][0] / np.sum(value[node][0])
                 node_text.append(f"Class: {class_names[predicted_class]}<br>Samples: {samples}")
                 node_color.append(predicted_class)
@@ -272,18 +282,18 @@ def create_interactive_tree_plot(model, feature_names, class_names=None, max_dep
                                f"Impurity: {impurity_val:.3f}<br>"
                                f"Class Probabilities:<br>{prob_text}")
             else:  # Regression
-                predicted_value = value[node][0][0]
+                predicted_value = float(value[node][0][0])  # Convert to Python float
                 node_text.append(f"Value: {predicted_value:.3f}<br>Samples: {samples}")
                 node_color.append(predicted_value)
                 node_info.append(f"Predicted Value: {predicted_value:.3f}<br>"
                                f"Samples: {samples}<br>"
                                f"MSE: {impurity_val:.3f}")
         else:  # Internal node
-            feature_name = feature_names[feature[node]]
-            threshold_val = threshold[node]
+            feature_name = feature_names[int(feature[node])]  # Convert to Python int
+            threshold_val = float(threshold[node])  # Convert to Python float
             
             if class_names is not None:  # Classification
-                predicted_class = np.argmax(value[node][0])
+                predicted_class = int(np.argmax(value[node][0]))  # Convert to Python int
                 node_text.append(f"{feature_name} ≤ {threshold_val:.3f}<br>Samples: {samples}")
                 node_color.append(predicted_class)
                 
@@ -294,7 +304,7 @@ def create_interactive_tree_plot(model, feature_names, class_names=None, max_dep
                                f"Impurity: {impurity_val:.3f}<br>"
                                f"Class Probabilities:<br>{prob_text}")
             else:  # Regression
-                predicted_value = value[node][0][0]
+                predicted_value = float(value[node][0][0])  # Convert to Python float
                 node_text.append(f"{feature_name} ≤ {threshold_val:.3f}<br>Samples: {samples}")
                 node_color.append(predicted_value)
                 node_info.append(f"Split: {feature_name} ≤ {threshold_val:.3f}<br>"
@@ -321,7 +331,7 @@ def create_interactive_tree_plot(model, feature_names, class_names=None, max_dep
         marker=dict(
             size=20,
             color=node_color,
-            colorscale='Viridis' if class_names is None else 'Set3',
+            colorscale='Viridis' if class_names is None else 'Plotly3',
             line=dict(width=2, color='black'),
             showscale=True,
             colorbar=dict(title="Predicted Value" if class_names is None else "Class")
