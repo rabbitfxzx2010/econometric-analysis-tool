@@ -18,22 +18,23 @@ from io import StringIO
 import openpyxl
 from datetime import datetime, date
 import json
+import requests
 
 # Email feedback function with daily limit
 def send_feedback_email(feedback_text):
-    """Send feedback via email with daily limit protection"""
+    """
+    Send feedback via Formspree service (no backend required).
+    Also saves feedback locally as backup.
+    """
     try:
-        import smtplib
-        from email.mime.text import MIMEText
-        from email.mime.multipart import MIMEMultipart
+        import requests
         import os
         from datetime import datetime, date
         
-        # Check daily limit
+        # Check daily limit (5 emails per day)
         today = date.today().strftime("%Y-%m-%d")
         count_file = f"email_count_{today}.txt"
         
-        # Read current count
         current_count = 0
         if os.path.exists(count_file):
             try:
@@ -42,12 +43,56 @@ def send_feedback_email(feedback_text):
             except:
                 current_count = 0
         
-        # Check if limit reached
         if current_count >= 5:
-            return False  # Limit reached
+            return False  # Daily limit reached
         
-        # Save feedback locally as fallback
+        # Save feedback locally as backup
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        feedback_entry = f"\n--- Feedback submitted on {timestamp} ---\n{feedback_text}\n"
+        
+        with open("user_feedback.txt", "a", encoding="utf-8") as f:
+            f.write(feedback_entry)
+        
+        # Send via Formspree (free service, no backend needed)
+        # Formspree endpoint configured for r_z79@txstate.edu and zhangren080@gmail.com
+        formspree_url = "https://formspree.io/f/xjkeegpn"  # Your actual Formspree endpoint
+        
+        email_data = {
+            "name": "Streamlit App User",
+            "email": "noreply@streamlitapp.com",
+            "subject": f"Feedback from Supervised Learning Tool - {timestamp}",
+            "message": f"""New feedback received:
+
+{feedback_text}
+
+Timestamp: {timestamp}
+Source: Streamlit Supervised Learning Tool
+            """,
+            "_replyto": "noreply@streamlitapp.com",
+            "_subject": f"App Feedback - {timestamp}",
+            "_cc": "r_z79@txstate.edu,zhangren080@gmail.com"
+        }
+        
+        try:
+            # Send to Formspree
+            response = requests.post(formspree_url, data=email_data, timeout=10)
+            
+            if response.status_code == 200:
+                # Email sent successfully, increment counter
+                with open(count_file, "w") as f:
+                    f.write(str(current_count + 1))
+                return True
+            else:
+                # Formspree failed, but feedback saved locally
+                return True  # Don't show error to user
+                
+        except requests.exceptions.RequestException:
+            # Network error, but feedback saved locally
+            return True  # Don't show error to user
+            
+    except Exception as e:
+        # Any other error, feedback still saved locally
+        return True
         feedback_entry = f"\n--- Feedback submitted on {timestamp} ---\n{feedback_text}\n"
         
         with open("user_feedback.txt", "a", encoding="utf-8") as f:
