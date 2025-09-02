@@ -141,6 +141,11 @@ def main():
     st.markdown('<h1 class="main-header">📊 Econometric Analysis Tool</h1>', unsafe_allow_html=True)
     st.markdown("Upload your data, select variables, and perform OLS regression analysis with comprehensive statistics and visualizations.")
     
+    # Initialize default values for variables used in main area
+    show_plots = False
+    plot_var = 'None'
+    plot_type = None
+    
     # Sidebar for file upload and variable selection
     st.sidebar.header("📁 Data Upload & Variable Selection")
     
@@ -207,26 +212,11 @@ def main():
                     st.write("**Descriptive Statistics:**")
                     st.dataframe(df.describe(), use_container_width=True)
                 
-                # Variable Plotting Controls
-                st.markdown('<h3 class="subheader">📈 Variable Visualization</h3>', unsafe_allow_html=True)
-                
-                current_df = df_filtered if 'df_filtered' in locals() else df
-                
-                # Select variable to plot
-                plot_var = st.selectbox(
-                    "Choose a variable to plot:",
-                    ['None'] + current_df.select_dtypes(include=[np.number]).columns.tolist(),
-                    help="Select a numeric variable to visualize"
-                )
-                
-                plot_type = None
-                if plot_var != 'None':
-                    # Plot type selection
-                    plot_type = st.selectbox(
-                        "Plot type:",
-                        ["Histogram", "Box Plot", "Time Series (if applicable)"],
-                        help="Choose how to visualize the variable"
-                    )
+                # Variable Plotting Display Area
+                if show_plots and plot_var != 'None' and plot_type:
+                    st.markdown('<h3 class="subheader">📈 Variable Visualization</h3>', unsafe_allow_html=True)
+                    
+                    current_df = df_filtered if 'df_filtered' in locals() else df
             
             with col2:
                 st.markdown('<h2 class="subheader">📊 Data Series Information</h2>', unsafe_allow_html=True)
@@ -284,13 +274,13 @@ def main():
                         outliers = current_df[(current_df[plot_var] < Q1 - 1.5*IQR) | (current_df[plot_var] > Q3 + 1.5*IQR)]
                         st.info(f"📊 Potential outliers detected: {len(outliers)} observations")
                     
-                    elif plot_type == "Time Series (if applicable)":
+                    elif plot_type == "Line Plot (Multiple Variables)":
                         if len(current_df) > 1:
-                            # Create a simple index-based time series
+                            # Create a simple index-based line plot
                             fig = px.line(
                                 x=current_df.index, 
                                 y=current_df[plot_var],
-                                title=f"Time Series Plot of {plot_var} (Index Order)"
+                                title=f"Line Plot of {plot_var} (Index Order)"
                             )
                             fig.update_layout(
                                 xaxis_title="Observation Index",
@@ -298,7 +288,7 @@ def main():
                             )
                             st.plotly_chart(fig, use_container_width=True)
                         else:
-                            st.warning("Need more than one observation for time series plot")            # Get numeric columns only from the current dataset
+                            st.warning("Need more than one observation for line plot")            # Get numeric columns only from the current dataset
             current_df = df_filtered if 'df_filtered' in locals() else df
             numeric_columns = current_df.select_dtypes(include=[np.number]).columns.tolist()
             
@@ -378,6 +368,48 @@ def main():
                 
                 st.sidebar.info(f"Filtered sample: {len(df_filtered)} rows")
                 
+            # Missing value handling
+            st.sidebar.markdown("---")
+            st.sidebar.header("🔧 Missing Value Handling")
+            
+            missing_method = st.sidebar.selectbox(
+                "How to handle missing values?",
+                ["Listwise Deletion", "Mean Imputation", "Median Imputation", "Mode Imputation", "KNN Imputation"],
+                help="Choose how to handle missing data"
+            )
+            
+            # Data Visualization section
+            st.sidebar.markdown("---")
+            st.sidebar.header("📊 Data Visualization")
+            
+            show_plots = st.sidebar.checkbox(
+                "Show data plots",
+                value=False,
+                help="Enable this to show variable visualization plots in the main area"
+            )
+            
+            if show_plots:
+                # Select variable to plot
+                current_df = df_filtered if 'df_filtered' in locals() else df
+                plot_var = st.sidebar.selectbox(
+                    "Choose a variable to plot:",
+                    ['None'] + current_df.select_dtypes(include=[np.number]).columns.tolist(),
+                    help="Select a numeric variable to visualize"
+                )
+                
+                if plot_var != 'None':
+                    # Plot type selection
+                    plot_type = st.sidebar.selectbox(
+                        "Plot type:",
+                        ["Histogram", "Box Plot", "Line Plot (Multiple Variables)"],
+                        help="Choose how to visualize the variable"
+                    )
+                else:
+                    plot_type = None
+            else:
+                plot_var = 'None'
+                plot_type = None
+                
             # Update numeric columns for the final filtered data
             numeric_columns = df_filtered.select_dtypes(include=[np.number]).columns.tolist()
             
@@ -410,18 +442,6 @@ def main():
                 ["OLS", "Lasso", "Ridge", "Elastic Net"],
                 help="Select the regression method to use"
             )
-            
-            # Missing value handling
-            st.sidebar.markdown("---")
-            st.sidebar.header("🔧 Missing Value Handling")
-            
-            missing_method = st.sidebar.selectbox(
-                "How to handle missing values?",
-                ["Listwise Deletion", "Mean Imputation", "Median Imputation", "Mode Imputation", "KNN Imputation"],
-                help="Choose how to handle missing data"
-            )
-            
-            # Note: Missing value summary moved to main area for selected variables only
             
             # Method-specific parameters
             if estimation_method in ["Lasso", "Ridge", "Elastic Net"]:
