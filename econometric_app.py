@@ -19,6 +19,305 @@ import openpyxl
 from datetime import datetime, date
 import json
 import requests
+import os
+
+# Usage tracking functions
+def track_app_usage():
+    """
+    Track app usage by recording session starts, page views, and user actions.
+    Creates and maintains usage statistics in a local JSON file.
+    """
+    usage_file = "app_usage_stats.json"
+    current_time = datetime.now()
+    today = current_time.strftime("%Y-%m-%d")
+    current_hour = current_time.hour
+    
+    # Initialize or load existing usage data
+    if os.path.exists(usage_file):
+        try:
+            with open(usage_file, "r") as f:
+                usage_data = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            usage_data = {}
+    else:
+        usage_data = {}
+    
+    # Initialize structure if needed
+    if "total_sessions" not in usage_data:
+        usage_data["total_sessions"] = 0
+    if "daily_stats" not in usage_data:
+        usage_data["daily_stats"] = {}
+    if "hourly_distribution" not in usage_data:
+        usage_data["hourly_distribution"] = {str(i): 0 for i in range(24)}
+    if "feature_usage" not in usage_data:
+        usage_data["feature_usage"] = {
+            "file_uploads": 0,
+            "model_runs": 0,
+            "visualizations_created": 0,
+            "downloads": 0
+        }
+    if "first_use" not in usage_data:
+        usage_data["first_use"] = current_time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Update daily stats
+    if today not in usage_data["daily_stats"]:
+        usage_data["daily_stats"][today] = {
+            "sessions": 0,
+            "unique_users": set(),
+            "models_run": 0,
+            "files_uploaded": 0
+        }
+    
+    # Track session if it's a new session (use Streamlit session state)
+    if "session_tracked" not in st.session_state:
+        st.session_state.session_tracked = True
+        usage_data["total_sessions"] += 1
+        usage_data["daily_stats"][today]["sessions"] += 1
+        usage_data["hourly_distribution"][str(current_hour)] += 1
+        
+        # Update last access
+        usage_data["last_access"] = current_time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Convert sets to lists for JSON serialization
+    for day_data in usage_data["daily_stats"].values():
+        if isinstance(day_data["unique_users"], set):
+            day_data["unique_users"] = list(day_data["unique_users"])
+    
+    # Save updated usage data
+    try:
+        with open(usage_file, "w") as f:
+            json.dump(usage_data, f, indent=2)
+    except Exception as e:
+        st.error(f"Failed to save usage data: {e}")
+    
+    return usage_data
+
+def track_feature_usage(feature_name):
+    """
+    Track specific feature usage (file upload, model run, etc.)
+    """
+    usage_file = "app_usage_stats.json"
+    today = date.today().strftime("%Y-%m-%d")
+    
+    if os.path.exists(usage_file):
+        try:
+            with open(usage_file, "r") as f:
+                usage_data = json.load(f)
+        except:
+            return
+        
+        # Update feature usage
+        if feature_name in usage_data["feature_usage"]:
+            usage_data["feature_usage"][feature_name] += 1
+        
+        # Update daily feature usage
+        if today in usage_data["daily_stats"]:
+            if feature_name == "model_runs":
+                usage_data["daily_stats"][today]["models_run"] += 1
+            elif feature_name == "file_uploads":
+                usage_data["daily_stats"][today]["files_uploaded"] += 1
+        
+        # Save updated data
+        try:
+            with open(usage_file, "w") as f:
+                json.dump(usage_data, f, indent=2)
+        except:
+            pass
+
+def display_usage_analytics():
+    """
+    Display comprehensive usage analytics for the app owner.
+    """
+    usage_file = "app_usage_stats.json"
+    
+    if not os.path.exists(usage_file):
+        st.warning("No usage data available yet. Analytics will appear after the app has been used.")
+        return
+    
+    try:
+        with open(usage_file, "r") as f:
+            usage_data = json.load(f)
+    except:
+        st.error("Unable to load usage data.")
+        return
+    
+    st.markdown("# 📊 App Usage Analytics Dashboard")
+    st.markdown("---")
+    
+    # Overview metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            label="Total Sessions",
+            value=usage_data.get("total_sessions", 0),
+            help="Total number of app sessions since tracking began"
+        )
+    
+    with col2:
+        total_models = usage_data.get("feature_usage", {}).get("model_runs", 0)
+        st.metric(
+            label="Models Run",
+            value=total_models,
+            help="Total number of machine learning models executed"
+        )
+    
+    with col3:
+        total_uploads = usage_data.get("feature_usage", {}).get("file_uploads", 0)
+        st.metric(
+            label="File Uploads",
+            value=total_uploads,
+            help="Total number of datasets uploaded"
+        )
+    
+    with col4:
+        total_viz = usage_data.get("feature_usage", {}).get("visualizations_created", 0)
+        st.metric(
+            label="Visualizations",
+            value=total_viz,
+            help="Total number of plots and visualizations created"
+        )
+    
+    # Time period info
+    st.markdown("### 📅 Usage Period")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        first_use = usage_data.get("first_use", "Unknown")
+        st.info(f"**First Use:** {first_use}")
+    
+    with col2:
+        last_access = usage_data.get("last_access", "Unknown")
+        st.info(f"**Last Access:** {last_access}")
+    
+    # Daily usage chart
+    daily_stats = usage_data.get("daily_stats", {})
+    if daily_stats:
+        st.markdown("### 📈 Daily Usage Trends")
+        
+        # Prepare data for daily chart
+        dates = list(daily_stats.keys())
+        sessions = [daily_stats[date]["sessions"] for date in dates]
+        models = [daily_stats[date]["models_run"] for date in dates]
+        uploads = [daily_stats[date]["files_uploaded"] for date in dates]
+        
+        daily_df = pd.DataFrame({
+            "Date": dates,
+            "Sessions": sessions,
+            "Models Run": models,
+            "Files Uploaded": uploads
+        })
+        
+        # Convert Date to datetime for better plotting
+        daily_df["Date"] = pd.to_datetime(daily_df["Date"])
+        daily_df = daily_df.sort_values("Date")
+        
+        # Create daily usage chart
+        fig = go.Figure()
+        
+        fig.add_trace(go.Scatter(
+            x=daily_df["Date"],
+            y=daily_df["Sessions"],
+            mode='lines+markers',
+            name='Sessions',
+            line=dict(color='blue', width=3)
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=daily_df["Date"],
+            y=daily_df["Models Run"],
+            mode='lines+markers',
+            name='Models Run',
+            line=dict(color='green', width=3)
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=daily_df["Date"],
+            y=daily_df["Files Uploaded"],
+            mode='lines+markers',
+            name='Files Uploaded',
+            line=dict(color='orange', width=3)
+        ))
+        
+        fig.update_layout(
+            title="Daily Usage Activity",
+            xaxis_title="Date",
+            yaxis_title="Count",
+            hovermode='x unified',
+            height=400
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # Hourly distribution
+    hourly_dist = usage_data.get("hourly_distribution", {})
+    if hourly_dist and sum(hourly_dist.values()) > 0:
+        st.markdown("### 🕐 Hourly Usage Distribution")
+        
+        hours = list(range(24))
+        counts = [hourly_dist.get(str(h), 0) for h in hours]
+        
+        fig = go.Figure(data=go.Bar(
+            x=[f"{h:02d}:00" for h in hours],
+            y=counts,
+            marker_color='lightblue',
+            text=counts,
+            textposition='outside'
+        ))
+        
+        fig.update_layout(
+            title="App Usage by Hour of Day",
+            xaxis_title="Hour",
+            yaxis_title="Number of Sessions",
+            height=400
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # Feature usage breakdown
+    feature_usage = usage_data.get("feature_usage", {})
+    if feature_usage and sum(feature_usage.values()) > 0:
+        st.markdown("### 🔧 Feature Usage Breakdown")
+        
+        feature_names = list(feature_usage.keys())
+        feature_counts = list(feature_usage.values())
+        
+        fig = go.Figure(data=go.Pie(
+            labels=[name.replace("_", " ").title() for name in feature_names],
+            values=feature_counts,
+            hole=0.4
+        ))
+        
+        fig.update_layout(
+            title="Most Used Features",
+            height=400
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # Recent activity table
+    if daily_stats:
+        st.markdown("### 📋 Recent Daily Activity")
+        
+        # Get last 7 days of data
+        recent_dates = sorted(daily_stats.keys())[-7:]
+        recent_data = []
+        
+        for date in recent_dates:
+            day_data = daily_stats[date]
+            recent_data.append({
+                "Date": date,
+                "Sessions": day_data["sessions"],
+                "Models Run": day_data["models_run"],
+                "Files Uploaded": day_data["files_uploaded"]
+            })
+        
+        recent_df = pd.DataFrame(recent_data)
+        st.dataframe(recent_df, use_container_width=True)
+    
+    # Raw data expander
+    with st.expander("🔍 View Raw Usage Data"):
+        st.json(usage_data)
 
 # Email feedback function with daily limit
 def send_feedback_email(feedback_text):
@@ -170,267 +469,406 @@ Source: Streamlit App
 
 def create_interactive_tree_plot(model, feature_names, class_names=None, max_depth=None):
     """
-    Create an interactive decision tree visualization using Plotly.
-    
-    Parameters:
-    - model: Trained decision tree model (DecisionTreeRegressor/Classifier)
-    - feature_names: List of feature names
-    - class_names: List of class names (for classification)
-    - max_depth: Maximum depth to display (None for full tree)
-    
-    Returns:
-    - Plotly figure object
+    Clean, simple decision tree visualization with proper node sizes and all depths visible.
     """
     tree = model.tree_
-    feature = tree.feature
-    threshold = tree.threshold
-    children_left = tree.children_left
-    children_right = tree.children_right
-    value = tree.value
-    impurity = tree.impurity
-    n_node_samples = tree.n_node_samples
     
-    # Calculate positions for nodes
-    def get_tree_positions(node=0, x=0, y=0, level=0, positions=None, level_width=None):
-        if positions is None:
-            positions = {}
-        if level_width is None:
-            level_width = {}
-            
-        # Always add the current node position
-        positions[node] = (x, y)
+    # Simple recursive function to calculate node positions with spacing for variable-sized nodes
+    def calculate_positions(node_id=0, x=0, y=0, level=0, h_spacing=160):
+        if node_id < 0 or node_id >= tree.node_count:
+            return {}
         
-        # Stop recursion if max_depth reached, but still record this node's position
+        positions = {node_id: (x, y)}
+        
+        # Stop if we've reached max depth
         if max_depth is not None and level >= max_depth:
             return positions
         
-        if level not in level_width:
-            level_width[level] = 0
-        level_width[level] += 1
+        # Get children
+        left_child = tree.children_left[node_id]
+        right_child = tree.children_right[node_id]
         
-        if int(children_left[node]) != int(children_right[node]):  # Not a leaf (convert to Python int)
-            # Calculate spacing for children
-            spacing = max(1.0 / (level + 1), 0.1)
+        # If this is not a leaf node
+        if left_child != right_child:
+            # Spacing increases for higher levels (bigger nodes) and decreases for lower levels
+            level_factor = max(1.0 - (level * 0.2), 0.4)  # Reduces spacing as depth increases
+            spacing = max(h_spacing * level_factor / (1 + level * 0.2), 45)  # Min 45 to prevent overlap
+            child_y = y - 24  # More vertical spacing for edge labels and larger top nodes
             
-            # Left child
-            if children_left[node] >= 0:
-                left_child = int(children_left[node])  # Convert to Python int
-                get_tree_positions(left_child, x - spacing, y - 1, level + 1, positions, level_width)
+            # Add left child
+            if left_child >= 0:
+                left_positions = calculate_positions(left_child, x - spacing, child_y, level + 1, h_spacing)
+                positions.update(left_positions)
             
-            # Right child
-            if children_right[node] >= 0:
-                right_child = int(children_right[node])  # Convert to Python int
-                get_tree_positions(right_child, x + spacing, y - 1, level + 1, positions, level_width)
+            # Add right child  
+            if right_child >= 0:
+                right_positions = calculate_positions(right_child, x + spacing, child_y, level + 1, h_spacing)
+                positions.update(right_positions)
         
         return positions
     
-    positions = get_tree_positions()
+    # Calculate all node positions
+    positions = calculate_positions()
     
-    # Create edges
-    edge_x = []
-    edge_y = []
-    edge_info = []
+    # Calculate level-based node sizing (same size within each level)
+    levels = {}
+    for node_id, (x, y) in positions.items():
+        level = int(round((15 - y) / 22))  # Calculate level from y position
+        if level not in levels:
+            levels[level] = []
+        levels[level].append(node_id)
     
-    for node in range(tree.node_count):
-        if max_depth is not None and positions[node][1] < -max_depth:
-            continue
-            
-        if children_left[node] >= 0:  # Has left child
-            left_child = int(children_left[node])  # Convert to Python int
-            # Only create edge if child position exists
-            if left_child in positions:
-                x0, y0 = positions[node]
-                x1, y1 = positions[left_child]
-                edge_x.extend([x0, x1, None])
-                edge_y.extend([y0, y1, None])
-                edge_info.extend(['True', 'True', None])
+    max_level = max(levels.keys()) if levels else 0
+    
+    # Simple, clean node sizing based on your reference image proportions
+    # Much more aggressive width reduction for levels 3-5 to prevent overlapping
+    
+    level_sizes = {}
+    for level in range(max_level + 1):
+        # Base sizing that matches your reference image proportions
+        # Much smaller widths for deeper levels
+        if level == 0:  # Root level
+            width = 120
+            height = 40
+            font_size = 14
+        elif level == 1:  # Second level
+            width = 100
+            height = 35
+            font_size = 12
+        elif level == 2:  # Third level  
+            width = 85
+            height = 30
+            font_size = 11
+        elif level == 3:  # Fourth level - much smaller
+            width = 40
+            height = 22
+            font_size = 8
+        elif level == 4:  # Fifth level - very small
+            width = 30
+            height = 18
+            font_size = 7
+        else:  # Sixth level and deeper - extremely small
+            width = 25
+            height = 15
+            font_size = 6
         
-        if children_right[node] >= 0:  # Has right child
-            right_child = int(children_right[node])  # Convert to Python int
-            # Only create edge if child position exists
-            if right_child in positions:
-                x0, y0 = positions[node]
-                x1, y1 = positions[right_child]
-                edge_x.extend([x0, x1, None])
-                edge_y.extend([y0, y1, None])
-                edge_info.extend(['False', 'False', None])
+        level_sizes[level] = {
+            'width': width,
+            'height': height,
+            'font_size': font_size
+        }
     
-    # Create nodes
-    node_x = []
-    node_y = []
-    node_text = []
-    node_color = []
-    node_info = []
-    node_sizes = []  # Add node sizes based on sample count
+    # Get Y range with generous padding
+    all_y = [pos[1] for pos in positions.values()]
+    min_y = min(all_y) - 25
+    max_y = max(all_y) + 15
     
-    # Calculate max samples for size normalization
-    max_samples = max([int(n_node_samples[node]) for node in range(tree.node_count)])
-    min_samples = min([int(n_node_samples[node]) for node in range(tree.node_count)])
-    
-    for node in range(tree.node_count):
-        if max_depth is not None and positions[node][1] < -max_depth:
-            continue
-            
-        x, y = positions[node]
-        node_x.append(x)
-        node_y.append(y)
-        
-        # Node information
-        samples = int(n_node_samples[node])  # Convert to Python int
-        impurity_val = float(impurity[node])  # Convert to Python float
-        
-        # Calculate node size based on sample count (between 25 and 50)
-        if max_samples > min_samples:
-            size_factor = (samples - min_samples) / (max_samples - min_samples)
-            node_size = 25 + (size_factor * 25)  # Size between 25 and 50
-        else:
-            node_size = 35
-        node_sizes.append(node_size)
-        
-        if int(children_left[node]) == int(children_right[node]):  # Leaf node (convert to Python int)
-            if class_names is not None:  # Classification
-                predicted_class = int(np.argmax(value[node][0]))  # Convert to Python int
-                class_probs = value[node][0] / np.sum(value[node][0])
-                # Improved leaf node text formatting
-                node_text.append(f"🏁 {class_names[predicted_class]}<br>📊 {samples}")
-                node_color.append(predicted_class)
-                
-                prob_text = "<br>".join([f"  • {cls}: {prob:.3f}" for cls, prob in zip(class_names, class_probs)])
-                node_info.append(f"🏁 <b>Final Prediction: {class_names[predicted_class]}</b><br>"
-                               f"📊 Samples: {samples}<br>"
-                               f"📈 Impurity: {impurity_val:.3f}<br>"
-                               f"🎯 Class Probabilities:<br>{prob_text}")
-            else:  # Regression
-                predicted_value = float(value[node][0][0])  # Convert to Python float
-                node_text.append(f"🎯 {predicted_value:.2f}<br>📊 {samples}")
-                node_color.append(predicted_value)
-                node_info.append(f"🎯 <b>Predicted Value: {predicted_value:.3f}</b><br>"
-                               f"📊 Samples: {samples}<br>"
-                               f"📈 MSE: {impurity_val:.3f}")
-        else:  # Internal node
-            feature_name = feature_names[int(feature[node])]  # Convert to Python int
-            threshold_val = float(threshold[node])  # Convert to Python float
-            
-            if class_names is not None:  # Classification
-                predicted_class = int(np.argmax(value[node][0]))  # Convert to Python int
-                # Improved internal node text formatting
-                node_text.append(f"🔍 {feature_name}<br>≤ {threshold_val:.2f}<br>📊 {samples}")
-                node_color.append(predicted_class)
-                
-                class_probs = value[node][0] / np.sum(value[node][0])
-                prob_text = "<br>".join([f"  • {cls}: {prob:.3f}" for cls, prob in zip(class_names, class_probs)])
-                node_info.append(f"🔍 <b>Decision Rule: {feature_name} ≤ {threshold_val:.3f}</b><br>"
-                               f"📊 Samples: {samples}<br>"
-                               f"📈 Impurity: {impurity_val:.3f}<br>"
-                               f"🎯 Current Class Distribution:<br>{prob_text}")
-            else:  # Regression
-                predicted_value = float(value[node][0][0])  # Convert to Python float
-                node_text.append(f"🔍 {feature_name}<br>≤ {threshold_val:.2f}<br>📊 {samples}")
-                node_color.append(predicted_value)
-                node_info.append(f"🔍 <b>Decision Rule: {feature_name} ≤ {threshold_val:.3f}</b><br>"
-                               f"📊 Samples: {samples}<br>"
-                               f"📈 MSE: {impurity_val:.3f}<br>"
-                               f"🎯 Current Value: {predicted_value:.3f}")
-    
-    # Create the plot
+    # Create figure
     fig = go.Figure()
     
-    # Add edges with improved styling
-    fig.add_trace(go.Scatter(
-        x=edge_x, y=edge_y,
-        mode='lines',
-        line=dict(
-            color='rgb(80,80,80)', 
-            width=2,
-            dash='solid'
-        ),
-        hoverinfo='none',
-        showlegend=False,
-        name='Tree Structure'
-    ))
+    # Draw edges first
+    for node_id in positions:
+        if node_id >= tree.node_count:
+            continue
+            
+        left_child = tree.children_left[node_id]
+        right_child = tree.children_right[node_id]
+        
+        x, y = positions[node_id]
+        
+        # Draw edge to left child
+        if left_child >= 0 and left_child in positions:
+            x_child, y_child = positions[left_child]
+            fig.add_trace(go.Scatter(
+                x=[x, x_child], y=[y, y_child],
+                mode='lines',
+                line=dict(color='black', width=2),
+                showlegend=False,
+                hoverinfo='skip'
+            ))
+        
+        # Draw edge to right child
+        if right_child >= 0 and right_child in positions:
+            x_child, y_child = positions[right_child]
+            fig.add_trace(go.Scatter(
+                x=[x, x_child], y=[y, y_child],
+                mode='lines', 
+                line=dict(color='black', width=2),
+                showlegend=False,
+                hoverinfo='skip'
+            ))
     
-    # Determine text color based on node color for better contrast
-    def get_text_color(color_value, is_classification=False):
-        """Determine optimal text color based on background color"""
-        if is_classification:
-            # For classification, use contrasting colors based on class
-            return 'white' if color_value % 2 == 0 else 'black'
+    # Calculate color scaling values
+    all_values = []
+    for node_id in positions:
+        if node_id >= tree.node_count:
+            continue
+        if class_names is not None:  # Classification
+            probs = tree.value[node_id][0] / tree.value[node_id][0].sum()
+            all_values.append(float(probs.max()))
+        else:  # Regression
+            all_values.append(float(tree.value[node_id][0][0]))
+    
+    min_val = min(all_values) if all_values else 0
+    max_val = max(all_values) if all_values else 1
+    
+    # Create feature mapping with proper abbreviations BEFORE drawing nodes
+    feature_mapping = {}
+    used_features = []
+    abbrev_count = {}
+    
+    # Collect all features used in the tree
+    for node_id in positions:
+        if node_id >= tree.node_count:
+            continue
+        if tree.children_left[node_id] != tree.children_right[node_id]:
+            feature_name = feature_names[tree.feature[node_id]]
+            if feature_name not in used_features:
+                used_features.append(feature_name)
+    
+    # Create abbreviations with numbering for duplicates
+    for feature_name in used_features:
+        # Create base abbreviation (first 3 letters)
+        if len(feature_name) >= 3:
+            base_abbrev = feature_name[:3].lower()
         else:
-            # For regression, use white for darker values, black for lighter values
-            # Normalize the color value to determine if it's light or dark
-            normalized = (color_value - min(node_color)) / (max(node_color) - min(node_color)) if max(node_color) != min(node_color) else 0.5
-            return 'white' if normalized > 0.5 else 'black'
+            base_abbrev = feature_name.lower()
+        
+        # Handle duplicates by adding numbers
+        if base_abbrev in abbrev_count:
+            abbrev_count[base_abbrev] += 1
+            final_abbrev = f"{base_abbrev}{abbrev_count[base_abbrev]}"
+        else:
+            abbrev_count[base_abbrev] = 1
+            # Check if there will be future conflicts
+            future_conflicts = [f for f in used_features if f != feature_name and len(f) >= 3 and f[:3].lower() == base_abbrev]
+            if future_conflicts:
+                final_abbrev = f"{base_abbrev}1"
+            else:
+                final_abbrev = base_abbrev
+        
+        feature_mapping[feature_name] = final_abbrev
     
-    # Create text colors for better contrast
-    text_colors = []
-    for i, color_val in enumerate(node_color):
-        text_colors.append(get_text_color(color_val, class_names is not None))
+    # Draw nodes
+    for node_id in positions:
+        if node_id >= tree.node_count:
+            continue
+            
+        x, y = positions[node_id]
+        
+        # Get level-specific sizing
+        level = int(round((15 - y) / 22))
+        node_sizing = level_sizes.get(level, level_sizes[0])
+        node_width = node_sizing['width']
+        node_height = node_sizing['height']
+        font_size = node_sizing['font_size']
+        
+        # Calculate node value and percentage
+        samples = int(tree.n_node_samples[node_id])
+        total_samples = int(tree.n_node_samples[0])
+        percentage = (samples / total_samples) * 100
+        
+        if class_names is not None:  # Classification
+            probs = tree.value[node_id][0] / tree.value[node_id][0].sum()
+            main_value = float(probs.max())
+        else:  # Regression
+            main_value = float(tree.value[node_id][0][0])
+        
+        # Calculate color based on value (keeping your good color scheme)
+        if max_val > min_val:
+            color_intensity = (main_value - min_val) / (max_val - min_val)
+        else:
+            color_intensity = 0.5
+        
+        # Your approved color scheme: dark blue (low) to dark red (high) with better text visibility
+        if color_intensity < 0.2:
+            node_color = 'rgba(30, 70, 150, 0.95)'   # Dark blue
+            text_color = 'white'  # White text on dark blue
+        elif color_intensity < 0.4:
+            node_color = 'rgba(173, 216, 230, 0.95)' # Light blue
+            text_color = 'black'  # Black text on light blue
+        elif color_intensity < 0.6:
+            node_color = 'rgba(255, 140, 105, 0.95)' # Light coral
+            text_color = 'black'  # Black text on coral
+        elif color_intensity < 0.8:
+            node_color = 'rgba(255, 69, 58, 0.95)'   # Red-orange
+            text_color = 'white'  # White text on red-orange
+        else:
+            node_color = 'rgba(220, 20, 20, 0.95)'   # Dark red
+            text_color = 'white'  # White text on dark red
+        
+        # Draw rectangular node with level-specific sizing
+        # node_width and node_height already set above based on level
+        
+        fig.add_shape(
+            type="rect",
+            x0=x - node_width/2, y0=y - node_height/2,
+            x1=x + node_width/2, y1=y + node_height/2,
+            fillcolor=node_color,
+            line=dict(color='black', width=2)
+        )
+        
+        # Create detailed hover information
+        if class_names is not None:  # Classification
+            probs = tree.value[node_id][0] / tree.value[node_id][0].sum()
+            class_probs_text = "<br>".join([f"{class_names[i]}: {prob:.3f}" for i, prob in enumerate(probs)])
+            hover_text = f"""
+            <b>Node {node_id}</b><br>
+            Level: {level}<br>
+            Samples: {samples}<br>
+            Percentage: {percentage:.1f}%<br>
+            <br><b>Class Probabilities:</b><br>
+            {class_probs_text}<br>
+            <br>Predicted Class: {class_names[probs.argmax()]}<br>
+            Confidence: {probs.max():.3f}
+            """
+        else:  # Regression
+            hover_text = f"""
+            <b>Node {node_id}</b><br>
+            Level: {level}<br>
+            Samples: {samples}<br>
+            Percentage: {percentage:.1f}%<br>
+            <br>Predicted Value: {main_value:.3f}<br>
+            Mean Squared Error: {tree.impurity[node_id]:.3f}
+            """
+        
+        # Add invisible scatter point for hover functionality
+        fig.add_trace(go.Scatter(
+            x=[x], y=[y],
+            mode='markers',
+            marker=dict(size=max(node_width, node_height), color='rgba(0,0,0,0)', opacity=0),
+            hovertext=hover_text,
+            hoverinfo='text',
+            showlegend=False,
+            name=''
+        ))
+        
+        # Add node text: value on top line, percentage on bottom line (2 decimal places)
+        node_text = f"<b>{main_value:.2f}</b><br><b>{percentage:.0f}%</b>"
+        
+        fig.add_annotation(
+            x=x, y=y,
+            text=node_text,
+            showarrow=False,
+            font=dict(size=font_size, color=text_color, family='Arial Bold'),  # Level-specific font size and optimal text color
+            borderwidth=0
+        )
+        
+        # Add decision rule on the LEFT edge with variable ABOVE and value BELOW
+        if tree.children_left[node_id] != tree.children_right[node_id]:
+            feature_name = feature_names[tree.feature[node_id]]
+            threshold = tree.threshold[node_id]
+            
+            # Use the abbreviation from our mapping
+            abbrev = feature_mapping.get(feature_name, feature_name[:3].lower())
+            
+            # Simplified edge labeling: variable name on LEFT, threshold on RIGHT
+            left_child = tree.children_left[node_id]
+            right_child = tree.children_right[node_id]
+            
+            # LEFT edge: show variable name (green = below threshold)
+            if left_child >= 0 and left_child in positions:
+                x_child, y_child = positions[left_child]
+                mid_x = (x + x_child) / 2
+                mid_y = (y + y_child) / 2
+                
+                # Variable name on left edge (green = below)
+                fig.add_annotation(
+                    x=mid_x, y=mid_y,
+                    text=f"<b>{abbrev}</b>",
+                    showarrow=False,
+                    font=dict(size=12, color='green', family='Arial Bold'),
+                    bgcolor='rgba(255,255,255,0.9)',
+                    bordercolor='green',
+                    borderwidth=1,
+                    borderpad=2
+                )
+            
+            # RIGHT edge: show threshold value (red = above threshold)
+            if right_child >= 0 and right_child in positions:
+                x_child, y_child = positions[right_child]
+                mid_x = (x + x_child) / 2
+                mid_y = (y + y_child) / 2
+                
+                # Threshold value on right edge (red = above)
+                fig.add_annotation(
+                    x=mid_x, y=mid_y,
+                    text=f"<b>{threshold:.1f}</b>",
+                    showarrow=False,
+                    font=dict(size=12, color='red', family='Arial Bold'),
+                    bgcolor='rgba(255,255,255,0.9)',
+                    bordercolor='red',
+                    borderwidth=1,
+                    borderpad=2
+                )
     
-    # Add nodes with improved visibility
+    # Add heatmap color legend
     fig.add_trace(go.Scatter(
-        x=node_x, y=node_y,
-        mode='markers+text',
+        x=[None], y=[None],
+        mode='markers',
         marker=dict(
-            size=node_sizes,  # Dynamic sizing based on sample count
-            color=node_color,
-            colorscale='RdYlGn_r' if class_names is None else 'RdYlGn',  # Green to red colorscale
-            line=dict(width=3, color='rgb(50,50,50)'),  # Darker border
+            size=1,
+            color=[min_val, max_val],
+            colorscale=[
+                [0, 'rgb(30,70,150)'],        # Dark blue for small values
+                [0.25, 'rgb(173,216,230)'],   # Light blue
+                [0.5, 'rgb(255,140,105)'],    # Light coral (middle)
+                [0.75, 'rgb(255,69,58)'],     # Red-orange
+                [1, 'rgb(220,20,20)']         # Dark red for big values
+            ],
             showscale=True,
             colorbar=dict(
                 title=dict(
-                    text="Predicted Value" if class_names is None else "Class",
-                    font=dict(size=14, color='black')
+                    text="<b>Probability/Value</b>",
+                    font=dict(size=14, family='Arial Bold')
                 ),
-                titleside='right',
-                thickness=15,
-                len=0.7
+                titleside="right",
+                thickness=20,
+                len=0.6,
+                x=1.02,
+                tickfont=dict(size=11, family='Arial')
             )
-        ),
-        text=node_text,
-        textposition="middle center",
-        textfont=dict(
-            size=10,  # Appropriate font size for readability
-            color=text_colors,  # Dynamic text color for contrast
-            family='Arial, sans-serif'  # Clean font family
-        ),
-        hovertext=node_info,
-        hoverinfo='text',
-        hoverlabel=dict(
-            bgcolor='rgba(255,255,255,0.95)',
-            bordercolor='black',
-            font=dict(size=12, color='black', family='Arial')
-        ),
-        showlegend=False
-    ))
-    
-    # Update layout with improved styling
-    fig.update_layout(
-        title=dict(
-            text="🌳 Interactive Decision Tree Visualization<br><sub>📍 Hover over nodes for details • ⬅️ Left branch = True, ➡️ Right branch = False</sub>",
-            font=dict(size=16, color='black'),
-            x=0.5,
-            xanchor='center'
         ),
         showlegend=False,
+        name='Color Scale'
+    ))
+    
+    # Update layout for proper display with legend, wider spacing to prevent overlap
+    fig.update_layout(
+        title="Decision Tree Visualization",
+        showlegend=False,
         hovermode='closest',
-        margin=dict(b=40,l=40,r=40,t=100),
-        annotations=[
-            dict(
-                text="💡 <b>Reading the Tree:</b> Larger nodes = more samples • Green = lower values, Red = higher values • 🔍 = decision nodes, 🏁 = final predictions",
-                showarrow=False,
-                xref="paper", yref="paper",
-                x=0.5, y=-0.08,
-                xanchor='center', yanchor='top',
-                font=dict(color='rgb(70,70,70)', size=12)
-            )
-        ],
-        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        plot_bgcolor='rgba(248,249,250,1)',  # Very light gray background
+        margin=dict(b=150, l=150, r=150, t=100),  # More space on left for threshold values
+        xaxis=dict(
+            showgrid=False,
+            zeroline=False, 
+            showticklabels=False,
+            range=[min([p[0] for p in positions.values()]) - 40, 
+                   max([p[0] for p in positions.values()]) + 40]  # More horizontal space
+        ),
+        yaxis=dict(
+            showgrid=False,
+            zeroline=False,
+            showticklabels=False, 
+            range=[min_y, max_y]
+        ),
+        plot_bgcolor='white',
         paper_bgcolor='white',
-        width=1000,  # Wider plot
-        height=700   # Taller plot
+        width=1600,  # Wider to accommodate better spacing
+        height=1200   # Taller for better vertical spacing
     )
+    
+    # Add feature mapping note at the bottom if there are abbreviated features
+    if feature_mapping:
+        note_text = "Feature abbreviations: " + ", ".join([f"{abbrev} = {full}" for full, abbrev in feature_mapping.items()])
+        fig.add_annotation(
+            x=0.5, y=-0.12,
+            xref='paper', yref='paper',
+            text=note_text,
+            showarrow=False,
+            font=dict(size=11, color='black', family='Arial'),
+            xanchor='center'
+        )
     
     return fig
 
@@ -444,54 +882,27 @@ def create_forest_importance_plot(model, feature_names):
         'importance': importance
     }).sort_values('importance', ascending=True)
     
-    fig = px.bar(
-        feature_importance, 
-        x='importance', 
-        y='feature',
+    # Create horizontal bar plot
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        x=feature_importance['importance'],
+        y=feature_importance['feature'],
         orientation='h',
-        title='Feature Importance (Random Forest)',
-        labels={'importance': 'Importance', 'feature': 'Features'}
-    )
+        marker=dict(color='skyblue', opacity=0.8),
+        text=feature_importance['importance'].round(3),
+        textposition='outside'
+    ))
     
     fig.update_layout(
-        height=max(400, len(feature_names) * 25),
-        margin=dict(l=150)
+        title="Feature Importance (Random Forest)",
+        xaxis_title="Importance",
+        yaxis_title="Features",
+        height=max(400, len(feature_names) * 50),
+        margin=dict(l=150, r=50, t=50, b=50)
     )
     
     return fig
-
-# Set page configuration
-st.set_page_config(
-    page_title="Supervised Learning Tool: Regression and Classification",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# Custom CSS for better styling
-st.markdown("""
-<style>
-.main-header {
-    font-size: 2.5rem;
-    color: #1f77b4;
-    text-align: center;
-    margin-bottom: 2rem;
-}
-.subheader {
-    font-size: 1.5rem;
-    color: #ff7f0e;
-    margin-top: 2rem;
-    margin-bottom: 1rem;
-}
-.metric-card {
-    background-color: #f0f2f6;
-    padding: 1rem;
-    border-radius: 0.5rem;
-    margin: 0.5rem 0;
-}
-</style>
-""", unsafe_allow_html=True)
-
 def calculate_regression_stats(X, y, model, method='OLS', fit_intercept=True):
     """Calculate comprehensive regression statistics for different methods"""
     # Predictions
@@ -522,7 +933,9 @@ def calculate_regression_stats(X, y, model, method='OLS', fit_intercept=True):
         # Standard errors of coefficients
         if fit_intercept:
             X_with_intercept = np.column_stack([np.ones(n), X])
-            coefficients = np.concatenate([[model.intercept_], model.coef_])
+            # Handle intercept properly for different model types
+            intercept_val = float(model.intercept_) if hasattr(model, 'intercept_') else 0.0
+            coefficients = np.concatenate([[intercept_val], model.coef_])
         else:
             X_with_intercept = X
             coefficients = model.coef_
@@ -641,7 +1054,18 @@ def fit_model(X, y, method, alpha=1.0, l1_ratio=0.5, fit_intercept=True, **kwarg
 def calculate_classification_metrics(X, y, model, method='Logistic Regression'):
     """Calculate comprehensive classification metrics"""
     y_pred = model.predict(X)
-    y_pred_proba = model.predict_proba(X)[:, 1] if hasattr(model, 'predict_proba') else None
+    
+    # Handle both binary and multiclass classification for predict_proba
+    if hasattr(model, 'predict_proba'):
+        y_pred_proba_full = model.predict_proba(X)
+        # For binary classification, use positive class probability
+        if y_pred_proba_full.shape[1] == 2:
+            y_pred_proba = y_pred_proba_full[:, 1]
+        else:
+            # For multiclass, use max probability across classes
+            y_pred_proba = np.max(y_pred_proba_full, axis=1)
+    else:
+        y_pred_proba = None
     
     accuracy = accuracy_score(y, y_pred)
     precision = precision_score(y, y_pred, average='binary', zero_division=0)
@@ -651,6 +1075,9 @@ def calculate_classification_metrics(X, y, model, method='Logistic Regression'):
     # ROC AUC if probabilities are available
     roc_auc = roc_auc_score(y, y_pred_proba) if y_pred_proba is not None else None
     
+    # Calculate residuals for classification (difference between actual and predicted probabilities)
+    residuals = y - y_pred_proba if y_pred_proba is not None else y - y_pred
+    
     return {
         'accuracy': accuracy,
         'precision': precision,
@@ -659,6 +1086,8 @@ def calculate_classification_metrics(X, y, model, method='Logistic Regression'):
         'roc_auc': roc_auc,
         'y_pred': y_pred,
         'y_pred_proba': y_pred_proba,
+        'fitted_values': y_pred_proba if y_pred_proba is not None else y_pred,  # Add fitted values for plotting
+        'residuals': residuals,  # Add residuals for plotting
         'n_obs': len(y),
         'method': method
     }
@@ -705,6 +1134,21 @@ def optimize_regularization_parameters(X, y, method, fit_intercept=True, cv_fold
     }
 
 def main():
+    # Initialize usage tracking (must be called early)
+    usage_data = track_app_usage()
+    
+    # Check if this is the analytics page (for app owner)
+    page = st.sidebar.selectbox(
+        "Navigation",
+        ["📊 Main App", "📈 Usage Analytics (Owner)"],
+        help="Select Main App for normal use, or Usage Analytics to view app usage statistics"
+    )
+    
+    if page == "📈 Usage Analytics (Owner)":
+        # Display usage analytics dashboard
+        display_usage_analytics()
+        return
+    
     # Main header
     st.markdown('<h1 class="main-header">📊 Supervised Learning Tool: Regression and Classification</h1>', unsafe_allow_html=True)
     
@@ -757,6 +1201,9 @@ def main():
     )
     
     if uploaded_file is not None:
+        # Track file upload
+        track_feature_usage("file_uploads")
+        
         try:
             # Determine file type and read accordingly
             file_extension = uploaded_file.name.split('.')[-1].lower()
@@ -1395,14 +1842,20 @@ def main():
             st.sidebar.markdown("---")
             st.sidebar.header("⚙️ Estimation Method")
             
-            # Detect if dependent variable is binary (for classification)
-            is_binary = len(df_filtered[dependent_var].dropna().unique()) == 2 if dependent_var else False
+            # Detect if dependent variable is categorical (for classification)
+            unique_values = df_filtered[dependent_var].dropna().unique() if dependent_var else []
+            n_unique = len(unique_values)
+            is_binary = n_unique == 2
+            is_categorical = n_unique <= 10 and all(isinstance(x, (int, float)) and x == int(x) for x in unique_values if pd.notna(x))
             
             # Method categories - always include all methods
             method_options = ["OLS", "Logistic Regression", "Decision Tree", "Random Forest", "Lasso", "Ridge", "Elastic Net"]
             
             if is_binary:
                 st.sidebar.info("🎯 Binary dependent variable detected - Classification methods recommended")
+            elif is_categorical and n_unique > 2:
+                st.sidebar.warning(f"📊 Multi-class dependent variable detected ({n_unique} classes: {sorted(unique_values)}) - Classification methods recommended")
+                st.sidebar.info("💡 For Decision Trees: Use Classification mode for proper probability estimates")
             
             estimation_method = st.sidebar.selectbox(
                 "Choose Estimation Method",
@@ -1554,6 +2007,33 @@ def main():
                 # Run regression button
                 if st.sidebar.button(f"🔬 Run {estimation_method} Regression", type="primary"):
                     
+                    # Track model execution - increment counters
+                    st.session_state.models_run_count += 1
+                    
+                    # Update persistent usage statistics
+                    usage_file = "app_usage_stats.json"
+                    try:
+                        if os.path.exists(usage_file):
+                            with open(usage_file, "r") as f:
+                                usage_data = json.load(f)
+                        else:
+                            usage_data = {}
+                        
+                        # Increment total models run
+                        usage_data["total_models_run"] = usage_data.get("total_models_run", 0) + 1
+                        
+                        # Save updated data
+                        with open(usage_file, "w") as f:
+                            json.dump(usage_data, f, indent=2)
+                            
+                    except Exception:
+                        # If file operations fail, continue with analysis
+                        pass
+                    
+                    # Track feature usage
+                    track_feature_usage("model_runs")
+                    track_feature_usage(f"model_{estimation_method.lower().replace(' ', '_')}")
+                    
                     # Prepare data for regression - handle missing values
                     y_raw = df_filtered[dependent_var]
                     X_raw = df_filtered[independent_vars]
@@ -1624,7 +2104,7 @@ def main():
                     st.info(f"📊 **Data Processing**: {data_info}")
                     
                     # Determine model type for tree/forest methods
-                    model_type = 'classification' if estimation_method in ['Logistic Regression', 'Decision Tree', 'Random Forest'] and is_binary else 'regression'
+                    model_type = 'classification' if estimation_method in ['Logistic Regression', 'Decision Tree', 'Random Forest'] and (is_binary or is_categorical) else 'regression'
                     
                     # Handle nested cross-validation for regularized methods
                     cv_results = None
@@ -1665,6 +2145,9 @@ def main():
                                         model_type=model_type, max_depth=max_depth, 
                                         min_samples_split=min_samples_split, min_samples_leaf=min_samples_leaf,
                                         n_estimators=n_estimators)
+                        # Track model run
+                        track_feature_usage("model_runs")
+                        
                         # Calculate stats on scaled data
                         if model_type == 'classification':
                             stats_dict = calculate_classification_metrics(X_scaled, y, model, estimation_method)
@@ -1677,6 +2160,8 @@ def main():
                                         model_type=model_type, max_depth=max_depth,
                                         min_samples_split=min_samples_split, min_samples_leaf=min_samples_leaf,
                                         n_estimators=n_estimators)
+                        # Track model run
+                        track_feature_usage("model_runs")
                         # Calculate stats on original data
                         if model_type == 'classification':
                             stats_dict = calculate_classification_metrics(X, y, model, estimation_method)
@@ -1722,27 +2207,27 @@ def main():
                         col1, col2, col3, col4 = st.columns(4)
                         
                         with col1:
-                            st.metric("Accuracy", f"{stats_dict['accuracy']:.4f}")
+                            st.metric("Accuracy", f"{float(stats_dict['accuracy']):.4f}")
                         with col2:
-                            st.metric("Precision", f"{stats_dict['precision']:.4f}")
+                            st.metric("Precision", f"{float(stats_dict['precision']):.4f}")
                         with col3:
-                            st.metric("Recall", f"{stats_dict['recall']:.4f}")
+                            st.metric("Recall", f"{float(stats_dict['recall']):.4f}")
                         with col4:
-                            st.metric("F1-Score", f"{stats_dict['f1_score']:.4f}")
+                            st.metric("F1-Score", f"{float(stats_dict['f1_score']):.4f}")
                         
                         if stats_dict['roc_auc'] is not None:
-                            st.metric("ROC AUC", f"{stats_dict['roc_auc']:.4f}")
+                            st.metric("ROC AUC", f"{float(stats_dict['roc_auc']):.4f}")
                     else:
                         col1, col2, col3, col4 = st.columns(4)
                         
                         with col1:
-                            st.metric("R-squared", f"{stats_dict['r_squared']:.4f}")
+                            st.metric("R-squared", f"{float(stats_dict['r_squared']):.4f}")
                         with col2:
-                            st.metric("Adj. R-squared", f"{stats_dict['adj_r_squared']:.4f}")
+                            st.metric("Adj. R-squared", f"{float(stats_dict['adj_r_squared']):.4f}")
                         with col3:
-                            st.metric("RMSE", f"{stats_dict['rmse']:.4f}")
+                            st.metric("RMSE", f"{float(stats_dict['rmse']):.4f}")
                         with col4:
-                            st.metric("Observations", stats_dict['n_obs'])
+                            st.metric("Observations", int(stats_dict['n_obs']))
                     
                     # Model-specific results display
                     if estimation_method in ["Decision Tree", "Random Forest"]:
@@ -1777,10 +2262,49 @@ def main():
                             tree_fig = create_interactive_tree_plot(
                                 model, 
                                 independent_vars, 
-                                class_names=class_names, 
+                                class_names=class_names,
                                 max_depth=max_depth_display
                             )
-                            st.plotly_chart(tree_fig, use_container_width=True)
+                            
+                            # Display tree matching expected image format
+                            st.info("� Tree visualization shows probabilities and percentages clearly displayed on each node. Colors indicate confidence levels.")
+                            
+                            # Show tree directly in interface with full-screen capability
+                            st.plotly_chart(tree_fig, use_container_width=False, config={'displayModeBar': True, 'displaylogo': False, 'modeBarButtonsToAdd': ['pan2d', 'zoom2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'resetScale2d']})  # Enable full toolbar with zoom controls
+                            
+                            # Optional full screen view
+                            if st.button("🔍 Open Tree in New Browser Tab (Full Screen)", key="open_tree_new_tab"):
+                                # Create HTML file for new window
+                                html_str = tree_fig.to_html(include_plotlyjs='cdn', div_id="tree_plot")
+                                
+                                # Save to temporary HTML file
+                                import tempfile
+                                import webbrowser
+                                
+                                with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False) as f:
+                                    f.write(html_str)
+                                    temp_file = f.name
+                                
+                                st.success(f"✅ Tree opened in new browser tab!")
+                                st.balloons()
+                            
+                            # Single download option matching display format
+                            st.markdown("### 📥 Download Tree Visualization")
+                            
+                            # Configure for high-quality PNG export matching display
+                            export_fig = tree_fig  # Use same figure
+                            png_bytes = export_fig.to_image(format="png", width=1200, height=1000, scale=2)
+                            
+                            st.download_button(
+                                label="📸 Download PNG (High Quality)",
+                                data=png_bytes,
+                                file_name=f"decision_tree_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+                                mime="image/png",
+                                help="Download high-resolution PNG showing probabilities and percentages clearly"
+                            )
+                            
+                            # Track visualization creation
+                            track_feature_usage("visualizations_created")
                             
                             # Text representation
                             with st.expander("📄 Tree Rules (Text Format)"):
@@ -1788,12 +2312,15 @@ def main():
                                 st.text(tree_rules)
                         
                         elif estimation_method == "Random Forest":
-                            # For Random Forest, show feature importance plot and individual tree option
-                            st.subheader("Feature Importance Plot")
+                            # For Random Forest, show feature importance and individual trees
+                            st.markdown('<h2 class="subheader">🌲 Random Forest Analysis</h2>', unsafe_allow_html=True)
+                            
+                            # Feature importance plot
+                            st.subheader("Feature Importance")
                             importance_fig = create_forest_importance_plot(model, independent_vars)
                             st.plotly_chart(importance_fig, use_container_width=True)
                             
-                            # Option to view individual trees
+                            # Individual tree visualization
                             st.subheader("Individual Tree Visualization")
                             tree_index = st.slider("Select tree to visualize", 0, len(model.estimators_)-1, 0)
                             max_depth_display = st.slider("Maximum depth to display", 1, 10, min(5, model.estimators_[tree_index].get_depth()))
@@ -1810,7 +2337,46 @@ def main():
                                 class_names=class_names,
                                 max_depth=max_depth_display
                             )
-                            st.plotly_chart(individual_tree_fig, use_container_width=True)
+                            st.plotly_chart(individual_tree_fig, use_container_width=False, config={'displayModeBar': True, 'displaylogo': False, 'modeBarButtonsToAdd': ['pan2d', 'zoom2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'resetScale2d']})  # Enable full toolbar with zoom controls
+                            
+                            # Download button for random forest individual tree
+                            col1, col2, col3 = st.columns([1, 1, 2])
+                            with col1:
+                                # Create export version with better spacing
+                                export_individual_fig = create_interactive_tree_plot(
+                                    model.estimators_[tree_index], 
+                                    independent_vars, 
+                                    class_names=class_names,
+                                    max_depth=max_depth_display
+                                )
+                                export_individual_fig.update_layout(
+                                    width=2000,  # Extra wide for export
+                                    height=1500,  # Extra tall for export
+                                    margin=dict(l=100, r=100, t=150, b=100)  # More margins
+                                )
+                                
+                                # Download as HTML
+                                html_str = export_individual_fig.to_html(include_plotlyjs='cdn')
+                                st.download_button(
+                                    label="📁 Download Tree (HTML)",
+                                    data=html_str,
+                                    file_name=f"random_forest_tree_{tree_index}.html",
+                                    mime="text/html",
+                                    help="Download interactive tree as HTML file"
+                                )
+                            with col2:
+                                # Download as PNG using export figure
+                                try:
+                                    img_bytes = export_individual_fig.to_image(format="png", width=2000, height=1500)
+                                    st.download_button(
+                                        label="🖼️ Download Tree (PNG)",
+                                        data=img_bytes,
+                                        file_name=f"random_forest_tree_{tree_index}.png",
+                                        mime="image/png",
+                                        help="Download tree as PNG image"
+                                    )
+                                except Exception as e:
+                                    st.caption("⚠️ PNG download requires kaleido package")
                             
                             # Text representation of selected tree
                             with st.expander(f"📄 Tree {tree_index} Rules (Text Format)"):
@@ -1827,11 +2393,16 @@ def main():
                         # Handle coefficient concatenation properly for different model types
                         if include_constant:
                             if estimation_method == 'Logistic Regression':
-                                # For logistic regression: intercept_ is (1,) and coef_ is (1, n_features)
-                                coefficients = np.concatenate([model.intercept_, model.coef_.flatten()])
+                                # For logistic regression: handle multidimensional arrays properly
+                                if hasattr(model, 'intercept_') and model.intercept_.ndim > 0:
+                                    intercept_part = model.intercept_.flatten()
+                                else:
+                                    intercept_part = np.array([float(model.intercept_)])
+                                coefficients = np.concatenate([intercept_part, model.coef_.flatten()])
                             else:
-                                # For linear models: both are 1D arrays
-                                coefficients = np.concatenate([[model.intercept_], model.coef_])
+                                # For linear models: handle as scalars
+                                intercept_val = float(model.intercept_) if hasattr(model, 'intercept_') else 0.0
+                                coefficients = np.concatenate([[intercept_val], model.coef_])
                         else:
                             if estimation_method == 'Logistic Regression':
                                 coefficients = model.coef_.flatten()
@@ -1850,9 +2421,9 @@ def main():
                                     'Std Error': float(stats_dict['std_errors'][i]),
                                     't-statistic': float(stats_dict['t_stats'][i]),
                                     'P-value': float(stats_dict['p_values'][i]),
-                                    'Significance': '***' if stats_dict['p_values'][i] < 0.01 else 
-                                                  '**' if stats_dict['p_values'][i] < 0.05 else 
-                                                  '*' if stats_dict['p_values'][i] < 0.1 else ''
+                                    'Significance': '***' if float(stats_dict['p_values'][i]) < 0.01 else 
+                                                  '**' if float(stats_dict['p_values'][i]) < 0.05 else 
+                                                  '*' if float(stats_dict['p_values'][i]) < 0.1 else ''
                                 })
                             else:
                                 # For regularized methods, show if coefficient was shrunk to zero
@@ -1873,7 +2444,7 @@ def main():
                         try:
                             if estimation_method in ["Lasso", "Ridge", "Elastic Net"]:
                                 cv_scores = cross_val_score(model, X_for_plotting, y, cv=5, scoring='r2')
-                                st.write(f"**Cross-Validation R² Score:** {cv_scores.mean():.4f} (±{cv_scores.std()*2:.4f})")
+                                st.write(f"**Cross-Validation R² Score:** {float(cv_scores.mean()):.4f} (±{float(cv_scores.std()*2):.4f})")
                         except:
                             pass
                     
@@ -1904,6 +2475,8 @@ def main():
                         ))
                         
                         st.plotly_chart(fig, use_container_width=True)
+                        # Track visualization creation
+                        track_feature_usage("visualizations_created")
                         st.caption("Points closer to the red line indicate better predictions. The closer the points to the diagonal line, the better the model fit.")
                     
                     with tab2:
@@ -2021,19 +2594,30 @@ def main():
                         **Model Equation ({estimation_method}):**
                         {dependent_var} = """
                         
+                        # Handle both binary and multiclass logistic regression
+                        if hasattr(model, 'coef_') and model.coef_.ndim > 1:
+                            # Multiclass case - use first class coefficients for display
+                            intercept_val = float(model.intercept_[0]) if model.intercept_.ndim > 0 else float(model.intercept_)
+                            coef_vals = model.coef_[0]
+                        else:
+                            # Binary case or linear regression
+                            intercept_val = float(model.intercept_) if hasattr(model, 'intercept_') else 0.0
+                            coef_vals = model.coef_
+                        
                         if include_constant:
-                            interpretation_text += f"{model.intercept_:.4f}"
+                            interpretation_text += f"{intercept_val:.4f}"
                         
                         for i, var in enumerate(independent_vars):
+                            coef_val = float(coef_vals[i]) if hasattr(coef_vals, '__getitem__') else float(coef_vals)
                             if include_constant:
-                                sign = "+" if model.coef_[i] >= 0 else ""
-                                interpretation_text += f" {sign} {model.coef_[i]:.4f} × {var}"
+                                sign = "+" if coef_val >= 0 else ""
+                                interpretation_text += f" {sign} {coef_val:.4f} × {var}"
                             else:
                                 if i == 0:
-                                    interpretation_text += f"{model.coef_[i]:.4f} × {var}"
+                                    interpretation_text += f"{coef_val:.4f} × {var}"
                                 else:
-                                    sign = "+" if model.coef_[i] >= 0 else ""
-                                    interpretation_text += f" {sign} {model.coef_[i]:.4f} × {var}"
+                                    sign = "+" if coef_val >= 0 else ""
+                                    interpretation_text += f" {sign} {coef_val:.4f} × {var}"
                         
                         st.write(interpretation_text)
                         
@@ -2052,26 +2636,45 @@ def main():
                         if estimation_method == "OLS":
                             # Coefficient interpretations for OLS
                             for i, var in enumerate(independent_vars):
-                                coef = model.coef_[i]
-                                p_val = stats_dict['p_values'][i + 1]  # +1 because intercept is first
-                                
-                                significance = ""
-                                if p_val < 0.01:
-                                    significance = " (highly significant)"
-                                elif p_val < 0.05:
-                                    significance = " (significant)"
-                                elif p_val < 0.1:
-                                    significance = " (marginally significant)"
+                                # Handle multidimensional coefficient arrays
+                                if hasattr(model, 'coef_') and model.coef_.ndim > 1:
+                                    coef = float(model.coef_[0][i])  # Use first class for multiclass
                                 else:
-                                    significance = " (not significant)"
+                                    coef = float(model.coef_[i])  # Binary or regression case
+                                
+                                if 'p_values' in stats_dict:
+                                    p_val = float(stats_dict['p_values'][i + 1])  # +1 because intercept is first
+                                    
+                                    significance = ""
+                                    if p_val < 0.01:
+                                        significance = " (highly significant)"
+                                    elif p_val < 0.05:
+                                        significance = " (significant)"
+                                    elif p_val < 0.1:
+                                        significance = " (marginally significant)"
+                                    else:
+                                        significance = " (not significant)"
+                                else:
+                                    significance = ""
                                 
                                 direction = "increases" if coef > 0 else "decreases"
                                 insights.append(f"• A one-unit increase in {var} is associated with a {abs(coef):.4f} unit {direction} in {dependent_var}{significance}")
                         
                         else:
-                            # Regularized methods insights
-                            selected_vars = [var for i, var in enumerate(independent_vars) if abs(model.coef_[i]) > 1e-10]
-                            excluded_vars = [var for i, var in enumerate(independent_vars) if abs(model.coef_[i]) <= 1e-10]
+                            # Regularized methods insights - handle multidimensional arrays
+                            selected_vars = []
+                            excluded_vars = []
+                            
+                            for i, var in enumerate(independent_vars):
+                                if hasattr(model, 'coef_') and model.coef_.ndim > 1:
+                                    coef_val = float(model.coef_[0][i])  # Use first class for multiclass
+                                else:
+                                    coef_val = float(model.coef_[i])  # Binary or regression case
+                                
+                                if abs(coef_val) > 1e-10:
+                                    selected_vars.append(var)
+                                else:
+                                    excluded_vars.append(var)
                             
                             if selected_vars:
                                 insights.append(f"• {estimation_method} selected {len(selected_vars)} out of {len(independent_vars)} variables: {', '.join(selected_vars)}")
@@ -2079,7 +2682,11 @@ def main():
                                 insights.append(f"• Variables excluded by regularization: {', '.join(excluded_vars)}")
                             
                             for i, var in enumerate(independent_vars):
-                                coef = model.coef_[i]
+                                if hasattr(model, 'coef_') and model.coef_.ndim > 1:
+                                    coef = float(model.coef_[0][i])  # Use first class for multiclass
+                                else:
+                                    coef = float(model.coef_[i])  # Binary or regression case
+                                
                                 if abs(coef) > 1e-10:  # Variable was selected
                                     direction = "increases" if coef > 0 else "decreases"
                                     insights.append(f"• {var}: coefficient = {coef:.4f} (selected by {estimation_method})")
@@ -2097,7 +2704,58 @@ def main():
     else:
         # Instructions when no file is uploaded
         st.info("👆 Please upload a CSV file using the sidebar to get started.")
-        
+    
+    # Display usage statistics at the bottom of the front page
+    st.markdown("---")
+    st.markdown("### App Usage Statistics")
+    
+    # Initialize session state for model run counter if it doesn't exist
+    if 'models_run_count' not in st.session_state:
+        st.session_state.models_run_count = 0
+    
+    # Get persistent usage statistics from file
+    usage_file = "app_usage_stats.json"
+    total_models_run = 0
+    total_sessions = 0
+    
+    try:
+        if os.path.exists(usage_file):
+            with open(usage_file, "r") as f:
+                usage_data = json.load(f)
+                total_models_run = usage_data.get("total_models_run", 0)
+                total_sessions = usage_data.get("total_sessions", 0)
+    except (json.JSONDecodeError, FileNotFoundError):
+        total_models_run = 0
+        total_sessions = 0
+    
+    # Create columns for statistics display
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric(
+            label="Total Models Run", 
+            value=f"{total_models_run:,}",
+            help="Total number of machine learning models executed since app launch"
+        )
+    
+    with col2:
+        st.metric(
+            label="Total Sessions", 
+            value=f"{total_sessions:,}",
+            help="Total number of user sessions recorded"
+        )
+    
+    with col3:
+        st.metric(
+            label="This Session", 
+            value=f"{st.session_state.models_run_count}",
+            help="Number of models you've run in this session"
+        )
+    
+    # Show current session info
+    st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Session ID: {id(st.session_state)}")
+    
+    if uploaded_file is None:
         st.markdown("""
         ## How to use this tool:
         
