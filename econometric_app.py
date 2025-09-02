@@ -266,7 +266,31 @@ def main():
     st.markdown('<h1 class="main-header">📊 Supervised Learning Tool: Regression and Classification</h1>', unsafe_allow_html=True)
     
     # About section first
-    st.markdown("**About:** This webapp is created by Ren Zhang. If you have any questions, please contact him through r_z79@txstate.edu")
+    st.markdown("**About:** This webapp is created by Ren Zhang. Please leave your feedback below:")
+    
+    # Feedback system
+    with st.expander("💬 Leave Feedback", expanded=False):
+        feedback_text = st.text_area(
+            "Your feedback helps improve this tool:",
+            placeholder="Share your thoughts, suggestions, or report any issues...",
+            height=100
+        )
+        if st.button("📤 Submit Feedback"):
+            if feedback_text.strip():
+                # Save feedback to a file only the creator can see
+                import datetime
+                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                feedback_entry = f"\n--- Feedback submitted on {timestamp} ---\n{feedback_text}\n"
+                
+                try:
+                    with open("user_feedback.txt", "a", encoding="utf-8") as f:
+                        f.write(feedback_entry)
+                    st.success("✅ Thank you for your feedback! It has been submitted.")
+                except:
+                    st.success("✅ Thank you for your feedback!")  # Fallback message
+            else:
+                st.warning("⚠️ Please enter some feedback before submitting.")
+    
     st.markdown("---")
     
     # Concise description
@@ -1313,53 +1337,30 @@ def main():
                     st.markdown('<h2 class="subheader">📊 Visualization</h2>', unsafe_allow_html=True)
                     
                     # Create tabs for different plots
-                    tab1, tab2, tab3, tab4 = st.tabs(["Scatter Plot", "Residuals vs Fitted", "Q-Q Plot", "Histogram of Residuals"])
+                    tab1, tab2, tab3, tab4 = st.tabs(["Actual vs Fitted", "Residuals vs Fitted", "Q-Q Plot", "Histogram of Residuals"])
                     
                     with tab1:
-                        # Scatter plot of Y vs first independent variable with regression line
-                        first_var = independent_vars[0]
-                        
+                        # Actual vs Fitted values plot
                         fig = px.scatter(
-                            x=X[first_var],  # Use original data for plotting
+                            x=stats_dict['fitted_values'],
                             y=y,
-                            labels={'x': first_var, 'y': dependent_var},
-                            title=f"Relationship between {dependent_var} and {first_var} ({estimation_method})"
+                            labels={'x': 'Fitted Values', 'y': f'Actual {dependent_var}'},
+                            title=f"Actual vs Fitted Values ({estimation_method})"
                         )
                         
-                        # Add regression line
-                        x_range = np.linspace(X[first_var].min(), X[first_var].max(), 100)
-                        if len(independent_vars) == 1:
-                            # Simple regression
-                            if estimation_method in ["Lasso", "Ridge", "Elastic Net"]:
-                                # For regularized methods, we need to scale the x_range
-                                x_range_scaled = scaler.transform(x_range.reshape(-1, 1)).flatten()
-                                y_line = (model.intercept_ if include_constant else 0) + model.coef_[0] * x_range_scaled
-                            else:
-                                y_line = (model.intercept_ if include_constant else 0) + model.coef_[0] * x_range
-                        else:
-                            # Multiple regression - fix other variables at their means
-                            if estimation_method in ["Lasso", "Ridge", "Elastic Net"]:
-                                X_line = np.zeros((100, len(independent_vars)))
-                                X_line[:, 0] = (x_range - X[first_var].mean()) / X[first_var].std()  # Scale first variable
-                                for i in range(1, len(independent_vars)):
-                                    X_line[:, i] = 0  # Scaled mean is 0
-                                y_line = model.predict(X_line)
-                            else:
-                                X_line = np.zeros((100, len(independent_vars)))
-                                X_line[:, 0] = x_range
-                                for i in range(1, len(independent_vars)):
-                                    X_line[:, i] = X.iloc[:, i].mean()
-                                y_line = model.predict(X_line)
-                        
+                        # Add perfect prediction line (y = x)
+                        min_val = min(min(stats_dict['fitted_values']), min(y))
+                        max_val = max(max(stats_dict['fitted_values']), max(y))
                         fig.add_trace(go.Scatter(
-                            x=x_range, 
-                            y=y_line,
+                            x=[min_val, max_val],
+                            y=[min_val, max_val],
                             mode='lines',
-                            name=f'{estimation_method} Line',
-                            line=dict(color='red', width=2)
+                            name='Perfect Prediction (y=x)',
+                            line=dict(color='red', width=2, dash='dash')
                         ))
                         
                         st.plotly_chart(fig, use_container_width=True)
+                        st.caption("Points closer to the red line indicate better predictions. The closer the points to the diagonal line, the better the model fit.")
                     
                     with tab2:
                         # Residuals vs Fitted values
