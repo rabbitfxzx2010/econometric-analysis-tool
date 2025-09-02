@@ -50,10 +50,11 @@ git push -u origin main
 ### **Step 3: Deploy to Streamlit Cloud (3 minutes)**
 1. Go to [share.streamlit.io](https://share.streamlit.io)
 2. Sign in with GitHub
-3. Click "New app" → "From existing repo"
+3. Click "Create app" (top-right) OR "Create your first app now" (center)
 4. Repository: `YOUR_USERNAME/econometric-analysis-tool`
-5. Main file: `econometric_app.py`
-6. Click "Deploy!"
+5. Branch: `main`
+6. Main file: `econometric_app.py`
+7. Click "Deploy!"
 
 ### **Step 4: Share with Students (1 minute)**
 Your app will be live at:
