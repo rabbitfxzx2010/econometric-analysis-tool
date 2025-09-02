@@ -822,7 +822,6 @@ def create_interactive_tree_plot(model, feature_names, class_names=None, max_dep
                     text="<b>Probability/Value</b>",
                     font=dict(size=14, family='Arial Bold')
                 ),
-                titleside="right",
                 thickness=20,
                 len=0.6,
                 x=1.02,
