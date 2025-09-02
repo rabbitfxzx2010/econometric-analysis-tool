@@ -214,12 +214,116 @@ def main():
                 current_df = df_filtered if 'df_filtered' in locals() else df
                 col_info = pd.DataFrame({
                     'Column': current_df.columns,
-                    'Data Type': current_df.dtypes,
+                    'Data Type': current_df.dtypes.astype(str),  # Convert to string to avoid Arrow conversion issues
                     'Non-Null Count': current_df.count(),
                     'Null Count': current_df.isnull().sum(),
                     'Unique Values': current_df.nunique()
                 })
-                st.dataframe(col_info, use_container_width=True)            # Get numeric columns only from the current dataset
+                st.dataframe(col_info, use_container_width=True)
+                
+                # Missing Values Summary for Selected Variables (only show if variables are selected)
+                if 'dependent_var' in locals() and dependent_var:
+                    selected_vars = [dependent_var] + (independent_vars if 'independent_vars' in locals() and independent_vars else [])
+                    
+                    st.markdown('<h3 class="subheader">🔍 Selected Variables Summary</h3>', unsafe_allow_html=True)
+                    
+                    missing_summary = []
+                    for var in selected_vars:
+                        if var in current_df.columns:
+                            missing_count = current_df[var].isnull().sum()
+                            total_count = len(current_df)
+                            missing_pct = (missing_count / total_count) * 100 if total_count > 0 else 0
+                            
+                            missing_summary.append({
+                                'Variable': var,
+                                'Role': 'Dependent (Y)' if var == dependent_var else 'Independent (X)',
+                                'Missing Count': missing_count,
+                                'Missing %': f"{missing_pct:.1f}%",
+                                'Available': total_count - missing_count
+                            })
+                    
+                    if missing_summary:
+                        missing_df = pd.DataFrame(missing_summary)
+                        st.dataframe(missing_df, use_container_width=True)
+                        
+                        # Summary alert
+                        total_missing = sum([row['Missing Count'] for row in missing_summary])
+                        if total_missing > 0:
+                            st.warning(f"⚠️ Total missing values in selected variables: {total_missing}")
+                        else:
+                            st.success("✅ No missing values in selected variables")
+                
+                # Variable Plotting Section
+                st.markdown('<h3 class="subheader">📈 Variable Plots</h3>', unsafe_allow_html=True)
+                
+                # Select variable to plot
+                plot_var = st.selectbox(
+                    "Choose a variable to plot:",
+                    ['None'] + current_df.select_dtypes(include=[np.number]).columns.tolist(),
+                    help="Select a numeric variable to visualize"
+                )
+                
+                if plot_var != 'None':
+                    # Plot type selection
+                    plot_type = st.selectbox(
+                        "Plot type:",
+                        ["Histogram", "Box Plot", "Time Series (if applicable)"],
+                        help="Choose how to visualize the variable"
+                    )
+                    
+                    if plot_type == "Histogram":
+                        fig = px.histogram(
+                            current_df, 
+                            x=plot_var,
+                            title=f"Distribution of {plot_var}",
+                            nbins=30
+                        )
+                        fig.update_layout(
+                            xaxis_title=plot_var,
+                            yaxis_title="Frequency"
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Add basic statistics
+                        stats_col1, stats_col2 = st.columns(2)
+                        with stats_col1:
+                            st.metric("Mean", f"{current_df[plot_var].mean():.2f}")
+                            st.metric("Median", f"{current_df[plot_var].median():.2f}")
+                        with stats_col2:
+                            st.metric("Std Dev", f"{current_df[plot_var].std():.2f}")
+                            st.metric("Range", f"{current_df[plot_var].max() - current_df[plot_var].min():.2f}")
+                    
+                    elif plot_type == "Box Plot":
+                        fig = px.box(
+                            current_df, 
+                            y=plot_var,
+                            title=f"Box Plot of {plot_var}"
+                        )
+                        fig.update_layout(yaxis_title=plot_var)
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Outlier information
+                        Q1 = current_df[plot_var].quantile(0.25)
+                        Q3 = current_df[plot_var].quantile(0.75)
+                        IQR = Q3 - Q1
+                        outliers = current_df[(current_df[plot_var] < Q1 - 1.5*IQR) | (current_df[plot_var] > Q3 + 1.5*IQR)]
+                        st.info(f"📊 Potential outliers detected: {len(outliers)} observations")
+                    
+                    elif plot_type == "Time Series (if applicable)":
+                        if len(current_df) > 1:
+                            # Create a simple index-based time series
+                            fig = px.line(
+                                x=current_df.index, 
+                                y=current_df[plot_var],
+                                title=f"Time Series Plot of {plot_var} (Index Order)"
+                            )
+                            fig.update_layout(
+                                xaxis_title="Observation Index",
+                                yaxis_title=plot_var
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.warning("Need more than one observation for time series plot")            # Get numeric columns only from the current dataset
             current_df = df_filtered if 'df_filtered' in locals() else df
             numeric_columns = current_df.select_dtypes(include=[np.number]).columns.tolist()
             
@@ -342,17 +446,7 @@ def main():
                 help="Choose how to handle missing data"
             )
             
-            # Show missing value info
-            if df_filtered.isnull().sum().sum() > 0:
-                missing_info = df_filtered.isnull().sum()
-                missing_vars = missing_info[missing_info > 0]
-                if len(missing_vars) > 0:
-                    st.sidebar.warning(f"⚠️ Missing values detected in: {', '.join(missing_vars.index.tolist())}")
-                    st.sidebar.write("Missing counts:")
-                    for var, count in missing_vars.items():
-                        st.sidebar.write(f"  • {var}: {count} missing")
-            else:
-                st.sidebar.success("✅ No missing values detected")
+            # Note: Missing value summary moved to main area for selected variables only
             
             # Method-specific parameters
             if estimation_method in ["Lasso", "Ridge", "Elastic Net"]:
