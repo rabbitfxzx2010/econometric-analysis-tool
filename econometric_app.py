@@ -1841,22 +1841,22 @@ def main():
                         for i, var_name in enumerate(variable_names):
                             coef_entry = {
                                 'Variable': var_name,
-                                'Coefficient': coefficients[i]
+                                'Coefficient': float(coefficients[i])  # Convert to Python float
                             }
                             
                             # Add statistical tests only for OLS
                             if estimation_method == "OLS":
                                 coef_entry.update({
-                                    'Std Error': stats_dict['std_errors'][i],
-                                    't-statistic': stats_dict['t_stats'][i],
-                                    'P-value': stats_dict['p_values'][i],
+                                    'Std Error': float(stats_dict['std_errors'][i]),
+                                    't-statistic': float(stats_dict['t_stats'][i]),
+                                    'P-value': float(stats_dict['p_values'][i]),
                                     'Significance': '***' if stats_dict['p_values'][i] < 0.01 else 
                                                   '**' if stats_dict['p_values'][i] < 0.05 else 
                                                   '*' if stats_dict['p_values'][i] < 0.1 else ''
                                 })
                             else:
                                 # For regularized methods, show if coefficient was shrunk to zero
-                                coef_entry['Status'] = 'Selected' if abs(coefficients[i]) > 1e-10 else 'Excluded'
+                                coef_entry['Status'] = 'Selected' if abs(float(coefficients[i])) > 1e-10 else 'Excluded'
                             
                             coef_data.append(coef_entry)
                         
@@ -1866,7 +1866,7 @@ def main():
                     if estimation_method == "OLS":
                         st.caption("Significance levels: *** p<0.01, ** p<0.05, * p<0.1")
                         # F-statistic
-                        st.write(f"**F-statistic:** {stats_dict['f_stat']:.4f} (p-value: {stats_dict['f_p_value']:.4f})")
+                        st.write(f"**F-statistic:** {float(stats_dict['f_stat']):.4f} (p-value: {float(stats_dict['f_p_value']):.4f})")
                     else:
                         st.caption("Regularized methods don't provide traditional statistical significance tests")
                         # Show cross-validation score if desired
