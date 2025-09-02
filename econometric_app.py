@@ -261,6 +261,11 @@ def create_interactive_tree_plot(model, feature_names, class_names=None, max_dep
     node_text = []
     node_color = []
     node_info = []
+    node_sizes = []  # Add node sizes based on sample count
+    
+    # Calculate max samples for size normalization
+    max_samples = max([int(n_node_samples[node]) for node in range(tree.node_count)])
+    min_samples = min([int(n_node_samples[node]) for node in range(tree.node_count)])
     
     for node in range(tree.node_count):
         if max_depth is not None and positions[node][1] < -max_depth:
@@ -274,102 +279,158 @@ def create_interactive_tree_plot(model, feature_names, class_names=None, max_dep
         samples = int(n_node_samples[node])  # Convert to Python int
         impurity_val = float(impurity[node])  # Convert to Python float
         
+        # Calculate node size based on sample count (between 25 and 50)
+        if max_samples > min_samples:
+            size_factor = (samples - min_samples) / (max_samples - min_samples)
+            node_size = 25 + (size_factor * 25)  # Size between 25 and 50
+        else:
+            node_size = 35
+        node_sizes.append(node_size)
+        
         if int(children_left[node]) == int(children_right[node]):  # Leaf node (convert to Python int)
             if class_names is not None:  # Classification
                 predicted_class = int(np.argmax(value[node][0]))  # Convert to Python int
                 class_probs = value[node][0] / np.sum(value[node][0])
-                node_text.append(f"Class: {class_names[predicted_class]}<br>Samples: {samples}")
+                # Improved leaf node text formatting
+                node_text.append(f"🏁 {class_names[predicted_class]}<br>📊 {samples}")
                 node_color.append(predicted_class)
                 
-                prob_text = "<br>".join([f"{cls}: {prob:.3f}" for cls, prob in zip(class_names, class_probs)])
-                node_info.append(f"Predicted Class: {class_names[predicted_class]}<br>"
-                               f"Samples: {samples}<br>"
-                               f"Impurity: {impurity_val:.3f}<br>"
-                               f"Class Probabilities:<br>{prob_text}")
+                prob_text = "<br>".join([f"  • {cls}: {prob:.3f}" for cls, prob in zip(class_names, class_probs)])
+                node_info.append(f"🏁 <b>Final Prediction: {class_names[predicted_class]}</b><br>"
+                               f"📊 Samples: {samples}<br>"
+                               f"📈 Impurity: {impurity_val:.3f}<br>"
+                               f"🎯 Class Probabilities:<br>{prob_text}")
             else:  # Regression
                 predicted_value = float(value[node][0][0])  # Convert to Python float
-                node_text.append(f"Value: {predicted_value:.3f}<br>Samples: {samples}")
+                node_text.append(f"🎯 {predicted_value:.2f}<br>📊 {samples}")
                 node_color.append(predicted_value)
-                node_info.append(f"Predicted Value: {predicted_value:.3f}<br>"
-                               f"Samples: {samples}<br>"
-                               f"MSE: {impurity_val:.3f}")
+                node_info.append(f"🎯 <b>Predicted Value: {predicted_value:.3f}</b><br>"
+                               f"📊 Samples: {samples}<br>"
+                               f"📈 MSE: {impurity_val:.3f}")
         else:  # Internal node
             feature_name = feature_names[int(feature[node])]  # Convert to Python int
             threshold_val = float(threshold[node])  # Convert to Python float
             
             if class_names is not None:  # Classification
                 predicted_class = int(np.argmax(value[node][0]))  # Convert to Python int
-                node_text.append(f"{feature_name} ≤ {threshold_val:.3f}<br>Samples: {samples}")
+                # Improved internal node text formatting
+                node_text.append(f"🔍 {feature_name}<br>≤ {threshold_val:.2f}<br>📊 {samples}")
                 node_color.append(predicted_class)
                 
                 class_probs = value[node][0] / np.sum(value[node][0])
-                prob_text = "<br>".join([f"{cls}: {prob:.3f}" for cls, prob in zip(class_names, class_probs)])
-                node_info.append(f"Split: {feature_name} ≤ {threshold_val:.3f}<br>"
-                               f"Samples: {samples}<br>"
-                               f"Impurity: {impurity_val:.3f}<br>"
-                               f"Class Probabilities:<br>{prob_text}")
+                prob_text = "<br>".join([f"  • {cls}: {prob:.3f}" for cls, prob in zip(class_names, class_probs)])
+                node_info.append(f"🔍 <b>Decision Rule: {feature_name} ≤ {threshold_val:.3f}</b><br>"
+                               f"📊 Samples: {samples}<br>"
+                               f"📈 Impurity: {impurity_val:.3f}<br>"
+                               f"🎯 Current Class Distribution:<br>{prob_text}")
             else:  # Regression
                 predicted_value = float(value[node][0][0])  # Convert to Python float
-                node_text.append(f"{feature_name} ≤ {threshold_val:.3f}<br>Samples: {samples}")
+                node_text.append(f"🔍 {feature_name}<br>≤ {threshold_val:.2f}<br>📊 {samples}")
                 node_color.append(predicted_value)
-                node_info.append(f"Split: {feature_name} ≤ {threshold_val:.3f}<br>"
-                               f"Samples: {samples}<br>"
-                               f"MSE: {impurity_val:.3f}<br>"
-                               f"Predicted Value: {predicted_value:.3f}")
+                node_info.append(f"🔍 <b>Decision Rule: {feature_name} ≤ {threshold_val:.3f}</b><br>"
+                               f"📊 Samples: {samples}<br>"
+                               f"📈 MSE: {impurity_val:.3f}<br>"
+                               f"🎯 Current Value: {predicted_value:.3f}")
     
     # Create the plot
     fig = go.Figure()
     
-    # Add edges
+    # Add edges with improved styling
     fig.add_trace(go.Scatter(
         x=edge_x, y=edge_y,
         mode='lines',
-        line=dict(color='rgb(125,125,125)', width=2),
+        line=dict(
+            color='rgb(80,80,80)', 
+            width=2,
+            dash='solid'
+        ),
         hoverinfo='none',
-        showlegend=False
+        showlegend=False,
+        name='Tree Structure'
     ))
     
-    # Add nodes
+    # Determine text color based on node color for better contrast
+    def get_text_color(color_value, is_classification=False):
+        """Determine optimal text color based on background color"""
+        if is_classification:
+            # For classification, use contrasting colors based on class
+            return 'white' if color_value % 2 == 0 else 'black'
+        else:
+            # For regression, use white for darker values, black for lighter values
+            # Normalize the color value to determine if it's light or dark
+            normalized = (color_value - min(node_color)) / (max(node_color) - min(node_color)) if max(node_color) != min(node_color) else 0.5
+            return 'white' if normalized > 0.5 else 'black'
+    
+    # Create text colors for better contrast
+    text_colors = []
+    for i, color_val in enumerate(node_color):
+        text_colors.append(get_text_color(color_val, class_names is not None))
+    
+    # Add nodes with improved visibility
     fig.add_trace(go.Scatter(
         x=node_x, y=node_y,
         mode='markers+text',
         marker=dict(
-            size=20,
+            size=node_sizes,  # Dynamic sizing based on sample count
             color=node_color,
-            colorscale='Viridis' if class_names is None else 'Plotly3',
-            line=dict(width=2, color='black'),
+            colorscale='RdYlGn_r' if class_names is None else 'RdYlGn',  # Green to red colorscale
+            line=dict(width=3, color='rgb(50,50,50)'),  # Darker border
             showscale=True,
-            colorbar=dict(title="Predicted Value" if class_names is None else "Class")
+            colorbar=dict(
+                title=dict(
+                    text="Predicted Value" if class_names is None else "Class",
+                    font=dict(size=14, color='black')
+                ),
+                titleside='right',
+                thickness=15,
+                len=0.7
+            )
         ),
         text=node_text,
         textposition="middle center",
-        textfont=dict(size=8, color='white'),
+        textfont=dict(
+            size=10,  # Appropriate font size for readability
+            color=text_colors,  # Dynamic text color for contrast
+            family='Arial, sans-serif'  # Clean font family
+        ),
         hovertext=node_info,
         hoverinfo='text',
+        hoverlabel=dict(
+            bgcolor='rgba(255,255,255,0.95)',
+            bordercolor='black',
+            borderwidth=1,
+            font=dict(size=12, color='black', family='Arial')
+        ),
         showlegend=False
     ))
     
-    # Update layout
+    # Update layout with improved styling
     fig.update_layout(
-        title="Interactive Decision Tree Visualization<br><sub>Hover over nodes for details • Left branch = True, Right branch = False</sub>",
+        title=dict(
+            text="🌳 Interactive Decision Tree Visualization<br><sub>📍 Hover over nodes for details • ⬅️ Left branch = True, ➡️ Right branch = False</sub>",
+            font=dict(size=16, color='black'),
+            x=0.5,
+            xanchor='center'
+        ),
         showlegend=False,
         hovermode='closest',
-        margin=dict(b=20,l=5,r=5,t=80),
+        margin=dict(b=40,l=40,r=40,t=100),
         annotations=[
             dict(
-                text="",
+                text="💡 <b>Reading the Tree:</b> Larger nodes = more samples • Green = lower values, Red = higher values • 🔍 = decision nodes, 🏁 = final predictions",
                 showarrow=False,
                 xref="paper", yref="paper",
-                x=0.005, y=-0.002,
-                xanchor='left', yanchor='bottom',
-                font=dict(color='black', size=12)
+                x=0.5, y=-0.08,
+                xanchor='center', yanchor='top',
+                font=dict(color='rgb(70,70,70)', size=12)
             )
         ],
         xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
         yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        plot_bgcolor='white',
-        width=800,
-        height=600
+        plot_bgcolor='rgba(248,249,250,1)',  # Very light gray background
+        paper_bgcolor='white',
+        width=1000,  # Wider plot
+        height=700   # Taller plot
     )
     
     return fig
