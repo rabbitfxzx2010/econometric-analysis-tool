@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.linear_model import LinearRegression, Lasso, Ridge, ElasticNet, LogisticRegression
-from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
+from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier, export_text
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.model_selection import cross_val_score, GridSearchCV, KFold
 from sklearn.preprocessing import StandardScaler
@@ -13,9 +13,11 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from scipy import stats
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from io import StringIO
 import openpyxl
 from datetime import datetime, date
+import json
 
 # Email feedback function with daily limit
 def send_feedback_email(feedback_text):
@@ -44,10 +46,6 @@ def send_feedback_email(feedback_text):
         if current_count >= 5:
             return False  # Limit reached
         
-        # For deployment, you would use SMTP with app passwords
-        # This is a placeholder that saves feedback locally for now
-        # and increments the count
-        
         # Save feedback locally as fallback
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         feedback_entry = f"\n--- Feedback submitted on {timestamp} ---\n{feedback_text}\n"
@@ -58,6 +56,43 @@ def send_feedback_email(feedback_text):
         # Increment count
         with open(count_file, "w") as f:
             f.write(str(current_count + 1))
+        
+        # Send email notification
+        try:
+            # Use a simple email service (for testing purposes)
+            # In production, you would configure SMTP properly
+            
+            # For now, we'll use a simple approach that works with Gmail
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+            
+            # Create message
+            msg = MIMEMultipart()
+            msg['From'] = "noreply@streamlit.app"  # Placeholder sender
+            msg['To'] = "r_z79@txstate.edu, zhangren080@gmail.com"
+            msg['Subject'] = f"App Feedback - {timestamp}"
+            
+            body = f"""New feedback received from your Supervised Learning Tool:
+
+Feedback: {feedback_text}
+
+Timestamp: {timestamp}
+Source: Streamlit App
+"""
+            msg.attach(MIMEText(body, 'plain'))
+            
+            # For actual email sending, you would need SMTP configuration
+            # This is commented out until you set up email credentials
+            # 
+            # server = smtplib.SMTP('smtp.gmail.com', 587)
+            # server.starttls()
+            # server.login("your_email@gmail.com", "your_app_password")
+            # server.sendmail("your_email@gmail.com", ["r_z79@txstate.edu", "zhangren080@gmail.com"], msg.as_string())
+            # server.quit()
+            
+        except Exception as e:
+            pass  # Email failed, but feedback is still saved locally
         
         # TODO: Uncomment when you set up email credentials in Streamlit secrets
         # gmail_user = st.secrets["email"]["gmail_user"]
@@ -82,6 +117,228 @@ def send_feedback_email(feedback_text):
         
     except Exception as e:
         return True  # Graceful fallback
+
+def create_interactive_tree_plot(model, feature_names, class_names=None, max_depth=None):
+    """
+    Create an interactive decision tree visualization using Plotly.
+    
+    Parameters:
+    - model: Trained decision tree model (DecisionTreeRegressor/Classifier)
+    - feature_names: List of feature names
+    - class_names: List of class names (for classification)
+    - max_depth: Maximum depth to display (None for full tree)
+    
+    Returns:
+    - Plotly figure object
+    """
+    tree = model.tree_
+    feature = tree.feature
+    threshold = tree.threshold
+    children_left = tree.children_left
+    children_right = tree.children_right
+    value = tree.value
+    impurity = tree.impurity
+    n_node_samples = tree.n_node_samples
+    
+    # Calculate positions for nodes
+    def get_tree_positions(node=0, x=0, y=0, level=0, positions=None, level_width=None):
+        if positions is None:
+            positions = {}
+        if level_width is None:
+            level_width = {}
+            
+        if max_depth is not None and level >= max_depth:
+            return positions
+            
+        positions[node] = (x, y)
+        
+        if level not in level_width:
+            level_width[level] = 0
+        level_width[level] += 1
+        
+        if children_left[node] != children_right[node]:  # Not a leaf
+            # Calculate spacing for children
+            spacing = max(1.0 / (level + 1), 0.1)
+            
+            # Left child
+            if children_left[node] >= 0:
+                get_tree_positions(children_left[node], x - spacing, y - 1, level + 1, positions, level_width)
+            
+            # Right child
+            if children_right[node] >= 0:
+                get_tree_positions(children_right[node], x + spacing, y - 1, level + 1, positions, level_width)
+        
+        return positions
+    
+    positions = get_tree_positions()
+    
+    # Create edges
+    edge_x = []
+    edge_y = []
+    edge_info = []
+    
+    for node in range(tree.node_count):
+        if max_depth is not None and positions[node][1] < -max_depth:
+            continue
+            
+        if children_left[node] >= 0:  # Has left child
+            x0, y0 = positions[node]
+            x1, y1 = positions[children_left[node]]
+            edge_x.extend([x0, x1, None])
+            edge_y.extend([y0, y1, None])
+            edge_info.extend(['True', 'True', None])
+        
+        if children_right[node] >= 0:  # Has right child
+            x0, y0 = positions[node]
+            x1, y1 = positions[children_right[node]]
+            edge_x.extend([x0, x1, None])
+            edge_y.extend([y0, y1, None])
+            edge_info.extend(['False', 'False', None])
+    
+    # Create nodes
+    node_x = []
+    node_y = []
+    node_text = []
+    node_color = []
+    node_info = []
+    
+    for node in range(tree.node_count):
+        if max_depth is not None and positions[node][1] < -max_depth:
+            continue
+            
+        x, y = positions[node]
+        node_x.append(x)
+        node_y.append(y)
+        
+        # Node information
+        samples = n_node_samples[node]
+        impurity_val = impurity[node]
+        
+        if children_left[node] == children_right[node]:  # Leaf node
+            if class_names is not None:  # Classification
+                predicted_class = np.argmax(value[node][0])
+                class_probs = value[node][0] / np.sum(value[node][0])
+                node_text.append(f"Class: {class_names[predicted_class]}<br>Samples: {samples}")
+                node_color.append(predicted_class)
+                
+                prob_text = "<br>".join([f"{cls}: {prob:.3f}" for cls, prob in zip(class_names, class_probs)])
+                node_info.append(f"Predicted Class: {class_names[predicted_class]}<br>"
+                               f"Samples: {samples}<br>"
+                               f"Impurity: {impurity_val:.3f}<br>"
+                               f"Class Probabilities:<br>{prob_text}")
+            else:  # Regression
+                predicted_value = value[node][0][0]
+                node_text.append(f"Value: {predicted_value:.3f}<br>Samples: {samples}")
+                node_color.append(predicted_value)
+                node_info.append(f"Predicted Value: {predicted_value:.3f}<br>"
+                               f"Samples: {samples}<br>"
+                               f"MSE: {impurity_val:.3f}")
+        else:  # Internal node
+            feature_name = feature_names[feature[node]]
+            threshold_val = threshold[node]
+            
+            if class_names is not None:  # Classification
+                predicted_class = np.argmax(value[node][0])
+                node_text.append(f"{feature_name} ≤ {threshold_val:.3f}<br>Samples: {samples}")
+                node_color.append(predicted_class)
+                
+                class_probs = value[node][0] / np.sum(value[node][0])
+                prob_text = "<br>".join([f"{cls}: {prob:.3f}" for cls, prob in zip(class_names, class_probs)])
+                node_info.append(f"Split: {feature_name} ≤ {threshold_val:.3f}<br>"
+                               f"Samples: {samples}<br>"
+                               f"Impurity: {impurity_val:.3f}<br>"
+                               f"Class Probabilities:<br>{prob_text}")
+            else:  # Regression
+                predicted_value = value[node][0][0]
+                node_text.append(f"{feature_name} ≤ {threshold_val:.3f}<br>Samples: {samples}")
+                node_color.append(predicted_value)
+                node_info.append(f"Split: {feature_name} ≤ {threshold_val:.3f}<br>"
+                               f"Samples: {samples}<br>"
+                               f"MSE: {impurity_val:.3f}<br>"
+                               f"Predicted Value: {predicted_value:.3f}")
+    
+    # Create the plot
+    fig = go.Figure()
+    
+    # Add edges
+    fig.add_trace(go.Scatter(
+        x=edge_x, y=edge_y,
+        mode='lines',
+        line=dict(color='rgb(125,125,125)', width=2),
+        hoverinfo='none',
+        showlegend=False
+    ))
+    
+    # Add nodes
+    fig.add_trace(go.Scatter(
+        x=node_x, y=node_y,
+        mode='markers+text',
+        marker=dict(
+            size=20,
+            color=node_color,
+            colorscale='Viridis' if class_names is None else 'Set3',
+            line=dict(width=2, color='black'),
+            showscale=True,
+            colorbar=dict(title="Predicted Value" if class_names is None else "Class")
+        ),
+        text=node_text,
+        textposition="middle center",
+        textfont=dict(size=8, color='white'),
+        hovertext=node_info,
+        hoverinfo='text',
+        showlegend=False
+    ))
+    
+    # Update layout
+    fig.update_layout(
+        title="Interactive Decision Tree Visualization<br><sub>Hover over nodes for details • Left branch = True, Right branch = False</sub>",
+        showlegend=False,
+        hovermode='closest',
+        margin=dict(b=20,l=5,r=5,t=80),
+        annotations=[
+            dict(
+                text="",
+                showarrow=False,
+                xref="paper", yref="paper",
+                x=0.005, y=-0.002,
+                xanchor='left', yanchor='bottom',
+                font=dict(color='black', size=12)
+            )
+        ],
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        plot_bgcolor='white',
+        width=800,
+        height=600
+    )
+    
+    return fig
+
+def create_forest_importance_plot(model, feature_names):
+    """
+    Create a feature importance plot for Random Forest models.
+    """
+    importance = model.feature_importances_
+    feature_importance = pd.DataFrame({
+        'feature': feature_names,
+        'importance': importance
+    }).sort_values('importance', ascending=True)
+    
+    fig = px.bar(
+        feature_importance, 
+        x='importance', 
+        y='feature',
+        orientation='h',
+        title='Feature Importance (Random Forest)',
+        labels={'importance': 'Importance', 'feature': 'Features'}
+    )
+    
+    fig.update_layout(
+        height=max(400, len(feature_names) * 25),
+        margin=dict(l=150)
+    )
+    
+    return fig
 
 # Set page configuration
 st.set_page_config(
@@ -1341,43 +1598,117 @@ def main():
                             st.metric("R-squared", f"{stats_dict['r_squared']:.4f}")
                         with col2:
                             st.metric("Adj. R-squared", f"{stats_dict['adj_r_squared']:.4f}")
-                    with col3:
-                        st.metric("RMSE", f"{stats_dict['rmse']:.4f}")
-                    with col4:
-                        st.metric("Observations", stats_dict['n_obs'])
+                        with col3:
+                            st.metric("RMSE", f"{stats_dict['rmse']:.4f}")
+                        with col4:
+                            st.metric("Observations", stats_dict['n_obs'])
                     
-                    # Coefficients table
-                    st.write("**Regression Coefficients:**")
-                    
-                    coef_data = []
-                    variable_names = (['Intercept'] if include_constant else []) + independent_vars
-                    coefficients = (np.concatenate([[model.intercept_], model.coef_]) if include_constant 
-                                   else model.coef_)
-                    
-                    for i, var_name in enumerate(variable_names):
-                        coef_entry = {
-                            'Variable': var_name,
-                            'Coefficient': coefficients[i]
-                        }
+                    # Model-specific results display
+                    if estimation_method in ["Decision Tree", "Random Forest"]:
+                        # Tree models don't have coefficients - show feature importance and tree structure
+                        st.write("**Feature Importance:**")
                         
-                        # Add statistical tests only for OLS
-                        if estimation_method == "OLS":
-                            coef_entry.update({
-                                'Std Error': stats_dict['std_errors'][i],
-                                't-statistic': stats_dict['t_stats'][i],
-                                'P-value': stats_dict['p_values'][i],
-                                'Significance': '***' if stats_dict['p_values'][i] < 0.01 else 
-                                              '**' if stats_dict['p_values'][i] < 0.05 else 
-                                              '*' if stats_dict['p_values'][i] < 0.1 else ''
+                        # Feature importance table
+                        importance_data = []
+                        for i, var_name in enumerate(independent_vars):
+                            importance_data.append({
+                                'Feature': var_name,
+                                'Importance': model.feature_importances_[i],
+                                'Importance %': f"{model.feature_importances_[i]*100:.2f}%"
                             })
-                        else:
-                            # For regularized methods, show if coefficient was shrunk to zero
-                            coef_entry['Status'] = 'Selected' if abs(coefficients[i]) > 1e-10 else 'Excluded'
                         
-                        coef_data.append(coef_entry)
+                        importance_df = pd.DataFrame(importance_data).sort_values('Importance', ascending=False)
+                        st.dataframe(importance_df, use_container_width=True)
+                        
+                        # Tree visualization
+                        st.markdown('<h2 class="subheader">🌳 Tree Structure</h2>', unsafe_allow_html=True)
+                        
+                        if estimation_method == "Decision Tree":
+                            # Create interactive decision tree plot
+                            max_depth_display = st.slider("Maximum depth to display", 1, 10, min(5, model.get_depth()))
+                            
+                            # Determine if classification or regression
+                            if hasattr(model, 'classes_'):
+                                class_names = [str(c) for c in model.classes_]
+                            else:
+                                class_names = None
+                            
+                            tree_fig = create_interactive_tree_plot(
+                                model, 
+                                independent_vars, 
+                                class_names=class_names, 
+                                max_depth=max_depth_display
+                            )
+                            st.plotly_chart(tree_fig, use_container_width=True)
+                            
+                            # Text representation
+                            with st.expander("📄 Tree Rules (Text Format)"):
+                                tree_rules = export_text(model, feature_names=independent_vars, max_depth=max_depth_display)
+                                st.text(tree_rules)
+                        
+                        elif estimation_method == "Random Forest":
+                            # For Random Forest, show feature importance plot and individual tree option
+                            st.subheader("Feature Importance Plot")
+                            importance_fig = create_forest_importance_plot(model, independent_vars)
+                            st.plotly_chart(importance_fig, use_container_width=True)
+                            
+                            # Option to view individual trees
+                            st.subheader("Individual Tree Visualization")
+                            tree_index = st.slider("Select tree to visualize", 0, len(model.estimators_)-1, 0)
+                            max_depth_display = st.slider("Maximum depth to display", 1, 10, min(5, model.estimators_[tree_index].get_depth()))
+                            
+                            # Determine if classification or regression
+                            if hasattr(model, 'classes_'):
+                                class_names = [str(c) for c in model.classes_]
+                            else:
+                                class_names = None
+                            
+                            individual_tree_fig = create_interactive_tree_plot(
+                                model.estimators_[tree_index], 
+                                independent_vars, 
+                                class_names=class_names,
+                                max_depth=max_depth_display
+                            )
+                            st.plotly_chart(individual_tree_fig, use_container_width=True)
+                            
+                            # Text representation of selected tree
+                            with st.expander(f"📄 Tree {tree_index} Rules (Text Format)"):
+                                tree_rules = export_text(model.estimators_[tree_index], feature_names=independent_vars, max_depth=max_depth_display)
+                                st.text(tree_rules)
                     
-                    coef_df = pd.DataFrame(coef_data)
-                    st.dataframe(coef_df, use_container_width=True)
+                    else:
+                        # Linear models - show coefficients table
+                        st.write("**Regression Coefficients:**")
+                        
+                        coef_data = []
+                        variable_names = (['Intercept'] if include_constant else []) + independent_vars
+                        coefficients = (np.concatenate([[model.intercept_], model.coef_]) if include_constant 
+                                       else model.coef_)
+                        
+                        for i, var_name in enumerate(variable_names):
+                            coef_entry = {
+                                'Variable': var_name,
+                                'Coefficient': coefficients[i]
+                            }
+                            
+                            # Add statistical tests only for OLS
+                            if estimation_method == "OLS":
+                                coef_entry.update({
+                                    'Std Error': stats_dict['std_errors'][i],
+                                    't-statistic': stats_dict['t_stats'][i],
+                                    'P-value': stats_dict['p_values'][i],
+                                    'Significance': '***' if stats_dict['p_values'][i] < 0.01 else 
+                                                  '**' if stats_dict['p_values'][i] < 0.05 else 
+                                                  '*' if stats_dict['p_values'][i] < 0.1 else ''
+                                })
+                            else:
+                                # For regularized methods, show if coefficient was shrunk to zero
+                                coef_entry['Status'] = 'Selected' if abs(coefficients[i]) > 1e-10 else 'Excluded'
+                            
+                            coef_data.append(coef_entry)
+                        
+                        coef_df = pd.DataFrame(coef_data)
+                        st.dataframe(coef_df, use_container_width=True)
                     
                     if estimation_method == "OLS":
                         st.caption("Significance levels: *** p<0.01, ** p<0.05, * p<0.1")
@@ -1480,71 +1811,128 @@ def main():
                     # Model interpretation
                     st.markdown('<h2 class="subheader">💡 Model Interpretation</h2>', unsafe_allow_html=True)
                     
-                    interpretation_text = f"""
-                    **Model Equation ({estimation_method}):**
-                    {dependent_var} = """
-                    
-                    if include_constant:
-                        interpretation_text += f"{model.intercept_:.4f}"
-                    
-                    for i, var in enumerate(independent_vars):
-                        if include_constant:
-                            sign = "+" if model.coef_[i] >= 0 else ""
-                            interpretation_text += f" {sign} {model.coef_[i]:.4f} × {var}"
+                    if estimation_method in ["Decision Tree", "Random Forest"]:
+                        # Tree model interpretation
+                        st.write(f"**{estimation_method} Model Summary:**")
+                        
+                        # Tree-specific insights
+                        insights = []
+                        
+                        if model_type == 'classification':
+                            accuracy_pct = stats_dict['accuracy'] * 100
+                            insights.append(f"• The model achieves {accuracy_pct:.1f}% accuracy in predicting {dependent_var}")
                         else:
-                            if i == 0:
-                                interpretation_text += f"{model.coef_[i]:.4f} × {var}"
-                            else:
-                                sign = "+" if model.coef_[i] >= 0 else ""
-                                interpretation_text += f" {sign} {model.coef_[i]:.4f} × {var}"
-                    
-                    st.write(interpretation_text)
-                    
-                    st.write("**Key Insights:**")
-                    insights = []
-                    
-                    # R-squared interpretation
-                    r_sq_pct = stats_dict['r_squared'] * 100
-                    insights.append(f"• The model explains {r_sq_pct:.1f}% of the variance in {dependent_var}")
-                    
-                    # Method-specific insights
-                    if estimation_method == "OLS":
-                        # Coefficient interpretations for OLS
-                        for i, var in enumerate(independent_vars):
-                            coef = model.coef_[i]
-                            p_val = stats_dict['p_values'][i + 1]  # +1 because intercept is first
-                            
-                            significance = ""
-                            if p_val < 0.01:
-                                significance = " (highly significant)"
-                            elif p_val < 0.05:
-                                significance = " (significant)"
-                            elif p_val < 0.1:
-                                significance = " (marginally significant)"
-                            else:
-                                significance = " (not significant)"
-                            
-                            direction = "increases" if coef > 0 else "decreases"
-                            insights.append(f"• A one-unit increase in {var} is associated with a {abs(coef):.4f} unit {direction} in {dependent_var}{significance}")
+                            r_sq_pct = stats_dict['r_squared'] * 100
+                            insights.append(f"• The model explains {r_sq_pct:.1f}% of the variance in {dependent_var}")
+                        
+                        # Feature importance insights
+                        sorted_features = sorted(zip(independent_vars, model.feature_importances_), 
+                                               key=lambda x: x[1], reverse=True)
+                        
+                        insights.append(f"• Most important feature: **{sorted_features[0][0]}** (importance: {sorted_features[0][1]:.3f})")
+                        
+                        if len(sorted_features) > 1:
+                            insights.append(f"• Second most important: **{sorted_features[1][0]}** (importance: {sorted_features[1][1]:.3f})")
+                        
+                        # Top 3 features by importance
+                        top_features = [f"{feat} ({imp:.3f})" for feat, imp in sorted_features[:3]]
+                        insights.append(f"• Top 3 features: {', '.join(top_features)}")
+                        
+                        if estimation_method == "Decision Tree":
+                            insights.append(f"• Tree depth: {model.get_depth()} levels")
+                            insights.append(f"• Number of leaves: {model.get_n_leaves()}")
+                        else:  # Random Forest
+                            insights.append(f"• Ensemble of {model.n_estimators} trees")
+                            avg_depth = np.mean([tree.get_depth() for tree in model.estimators_])
+                            insights.append(f"• Average tree depth: {avg_depth:.1f} levels")
+                        
+                        for insight in insights:
+                            st.write(insight)
+                        
+                        # Model interpretation guidance
+                        st.write("**How to interpret the tree:**")
+                        interpretation_guide = [
+                            "• Each node shows a decision rule (e.g., 'Feature ≤ threshold')",
+                            "• Left branch = condition is True, Right branch = condition is False",
+                            "• Leaf nodes show the final prediction",
+                            "• Node color intensity indicates prediction confidence",
+                            "• Sample count shows how many training examples reached each node"
+                        ]
+                        
+                        for guide in interpretation_guide:
+                            st.write(guide)
                     
                     else:
-                        # Regularized methods insights
-                        selected_vars = [var for i, var in enumerate(independent_vars) if abs(model.coef_[i]) > 1e-10]
-                        excluded_vars = [var for i, var in enumerate(independent_vars) if abs(model.coef_[i]) <= 1e-10]
+                        # Linear model interpretation
+                        interpretation_text = f"""
+                        **Model Equation ({estimation_method}):**
+                        {dependent_var} = """
                         
-                        if selected_vars:
-                            insights.append(f"• {estimation_method} selected {len(selected_vars)} out of {len(independent_vars)} variables: {', '.join(selected_vars)}")
-                        if excluded_vars:
-                            insights.append(f"• Variables excluded by regularization: {', '.join(excluded_vars)}")
+                        if include_constant:
+                            interpretation_text += f"{model.intercept_:.4f}"
                         
                         for i, var in enumerate(independent_vars):
-                            coef = model.coef_[i]
-                            if abs(coef) > 1e-10:  # Variable was selected
+                            if include_constant:
+                                sign = "+" if model.coef_[i] >= 0 else ""
+                                interpretation_text += f" {sign} {model.coef_[i]:.4f} × {var}"
+                            else:
+                                if i == 0:
+                                    interpretation_text += f"{model.coef_[i]:.4f} × {var}"
+                                else:
+                                    sign = "+" if model.coef_[i] >= 0 else ""
+                                    interpretation_text += f" {sign} {model.coef_[i]:.4f} × {var}"
+                        
+                        st.write(interpretation_text)
+                        
+                        st.write("**Key Insights:**")
+                        insights = []
+                        
+                        # R-squared interpretation
+                        if model_type == 'regression':
+                            r_sq_pct = stats_dict['r_squared'] * 100
+                            insights.append(f"• The model explains {r_sq_pct:.1f}% of the variance in {dependent_var}")
+                        else:
+                            accuracy_pct = stats_dict['accuracy'] * 100
+                            insights.append(f"• The model achieves {accuracy_pct:.1f}% accuracy in predicting {dependent_var}")
+                        
+                        # Method-specific insights
+                        if estimation_method == "OLS":
+                            # Coefficient interpretations for OLS
+                            for i, var in enumerate(independent_vars):
+                                coef = model.coef_[i]
+                                p_val = stats_dict['p_values'][i + 1]  # +1 because intercept is first
+                                
+                                significance = ""
+                                if p_val < 0.01:
+                                    significance = " (highly significant)"
+                                elif p_val < 0.05:
+                                    significance = " (significant)"
+                                elif p_val < 0.1:
+                                    significance = " (marginally significant)"
+                                else:
+                                    significance = " (not significant)"
+                                
                                 direction = "increases" if coef > 0 else "decreases"
-                                insights.append(f"• {var}: coefficient = {coef:.4f} (selected by {estimation_method})")
-                    
-                    for insight in insights:
-                        st.write(insight)
+                                insights.append(f"• A one-unit increase in {var} is associated with a {abs(coef):.4f} unit {direction} in {dependent_var}{significance}")
+                        
+                        else:
+                            # Regularized methods insights
+                            selected_vars = [var for i, var in enumerate(independent_vars) if abs(model.coef_[i]) > 1e-10]
+                            excluded_vars = [var for i, var in enumerate(independent_vars) if abs(model.coef_[i]) <= 1e-10]
+                            
+                            if selected_vars:
+                                insights.append(f"• {estimation_method} selected {len(selected_vars)} out of {len(independent_vars)} variables: {', '.join(selected_vars)}")
+                            if excluded_vars:
+                                insights.append(f"• Variables excluded by regularization: {', '.join(excluded_vars)}")
+                            
+                            for i, var in enumerate(independent_vars):
+                                coef = model.coef_[i]
+                                if abs(coef) > 1e-10:  # Variable was selected
+                                    direction = "increases" if coef > 0 else "decreases"
+                                    insights.append(f"• {var}: coefficient = {coef:.4f} (selected by {estimation_method})")
+                        
+                        for insight in insights:
+                            st.write(insight)
             
             else:
                 st.sidebar.warning("⚠️ Please select at least one independent variable.")
