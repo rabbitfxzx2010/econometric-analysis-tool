@@ -206,6 +206,27 @@ def main():
                     # Display basic statistics
                     st.write("**Descriptive Statistics:**")
                     st.dataframe(df.describe(), use_container_width=True)
+                
+                # Variable Plotting Controls
+                st.markdown('<h3 class="subheader">📈 Variable Visualization</h3>', unsafe_allow_html=True)
+                
+                current_df = df_filtered if 'df_filtered' in locals() else df
+                
+                # Select variable to plot
+                plot_var = st.selectbox(
+                    "Choose a variable to plot:",
+                    ['None'] + current_df.select_dtypes(include=[np.number]).columns.tolist(),
+                    help="Select a numeric variable to visualize"
+                )
+                
+                plot_type = None
+                if plot_var != 'None':
+                    # Plot type selection
+                    plot_type = st.selectbox(
+                        "Plot type:",
+                        ["Histogram", "Box Plot", "Time Series (if applicable)"],
+                        help="Choose how to visualize the variable"
+                    )
             
             with col2:
                 st.markdown('<h2 class="subheader">📊 Data Series Information</h2>', unsafe_allow_html=True)
@@ -221,55 +242,9 @@ def main():
                 })
                 st.dataframe(col_info, use_container_width=True)
                 
-                # Missing Values Summary for Selected Variables (only show if variables are selected)
-                if 'dependent_var' in locals() and dependent_var:
-                    selected_vars = [dependent_var] + (independent_vars if 'independent_vars' in locals() and independent_vars else [])
-                    
-                    st.markdown('<h3 class="subheader">🔍 Selected Variables Summary</h3>', unsafe_allow_html=True)
-                    
-                    missing_summary = []
-                    for var in selected_vars:
-                        if var in current_df.columns:
-                            missing_count = current_df[var].isnull().sum()
-                            total_count = len(current_df)
-                            missing_pct = (missing_count / total_count) * 100 if total_count > 0 else 0
-                            
-                            missing_summary.append({
-                                'Variable': var,
-                                'Role': 'Dependent (Y)' if var == dependent_var else 'Independent (X)',
-                                'Missing Count': missing_count,
-                                'Missing %': f"{missing_pct:.1f}%",
-                                'Available': total_count - missing_count
-                            })
-                    
-                    if missing_summary:
-                        missing_df = pd.DataFrame(missing_summary)
-                        st.dataframe(missing_df, use_container_width=True)
-                        
-                        # Summary alert
-                        total_missing = sum([row['Missing Count'] for row in missing_summary])
-                        if total_missing > 0:
-                            st.warning(f"⚠️ Total missing values in selected variables: {total_missing}")
-                        else:
-                            st.success("✅ No missing values in selected variables")
-                
-                # Variable Plotting Section
-                st.markdown('<h3 class="subheader">📈 Variable Plots</h3>', unsafe_allow_html=True)
-                
-                # Select variable to plot
-                plot_var = st.selectbox(
-                    "Choose a variable to plot:",
-                    ['None'] + current_df.select_dtypes(include=[np.number]).columns.tolist(),
-                    help="Select a numeric variable to visualize"
-                )
-                
-                if plot_var != 'None':
-                    # Plot type selection
-                    plot_type = st.selectbox(
-                        "Plot type:",
-                        ["Histogram", "Box Plot", "Time Series (if applicable)"],
-                        help="Choose how to visualize the variable"
-                    )
+                # Plot Display Area (plots will appear here when variables are selected on the left)
+                if 'plot_var' in locals() and 'plot_type' in locals() and plot_var != 'None' and plot_type:
+                    st.markdown('<h3 class="subheader">� Variable Plot</h3>', unsafe_allow_html=True)
                     
                     if plot_type == "Histogram":
                         fig = px.histogram(
@@ -473,6 +448,40 @@ def main():
             else:
                 alpha = 1.0
                 l1_ratio = 0.5
+            
+            # Missing Values Summary for Selected Variables (show in main area after variables are selected)
+            if dependent_var and independent_vars:
+                st.markdown("---")
+                st.markdown('<h2 class="subheader">🔍 Selected Variables Missing Values Summary</h2>', unsafe_allow_html=True)
+                
+                selected_vars = [dependent_var] + independent_vars
+                current_df = df_filtered if 'df_filtered' in locals() else df
+                
+                missing_summary = []
+                for var in selected_vars:
+                    if var in current_df.columns:
+                        missing_count = current_df[var].isnull().sum()
+                        total_count = len(current_df)
+                        missing_pct = (missing_count / total_count) * 100 if total_count > 0 else 0
+                        
+                        missing_summary.append({
+                            'Variable': var,
+                            'Role': 'Dependent (Y)' if var == dependent_var else 'Independent (X)',
+                            'Missing Count': missing_count,
+                            'Missing %': f"{missing_pct:.1f}%",
+                            'Available': total_count - missing_count
+                        })
+                
+                if missing_summary:
+                    missing_df = pd.DataFrame(missing_summary)
+                    st.dataframe(missing_df, use_container_width=True)
+                    
+                    # Summary alert
+                    total_missing = sum([row['Missing Count'] for row in missing_summary])
+                    if total_missing > 0:
+                        st.warning(f"⚠️ Total missing values in selected variables: {total_missing}")
+                    else:
+                        st.success("✅ No missing values in selected variables")
             
             if independent_vars:
                 # Run regression button
