@@ -1292,14 +1292,15 @@ def main():
             
             # Get numeric columns only from the current dataset
             current_df = df_filtered if 'df_filtered' in locals() else df
-            numeric_columns = current_df.select_dtypes(include=[np.number]).columns.tolist()
+            # Include both numeric and boolean columns (boolean columns are useful for regression)
+            numeric_columns = current_df.select_dtypes(include=[np.number, bool]).columns.tolist()
             
             if len(numeric_columns) < 2:
                 st.error("❌ Please upload a dataset with at least 2 numeric columns for regression analysis.")
                 return
             
-            # Update numeric columns for the final filtered data
-            numeric_columns = df_filtered.select_dtypes(include=[np.number]).columns.tolist()
+            # Update numeric columns for the final filtered data (include boolean)
+            numeric_columns = df_filtered.select_dtypes(include=[np.number, bool]).columns.tolist()
             
             # Variable selection in sidebar
             st.sidebar.markdown("---")
@@ -1544,6 +1545,13 @@ def main():
                     # Prepare data for regression - handle missing values
                     y_raw = df_filtered[dependent_var]
                     X_raw = df_filtered[independent_vars]
+                    
+                    # Convert boolean columns to numeric (True=1, False=0)
+                    bool_cols = X_raw.select_dtypes(include=[bool]).columns
+                    if len(bool_cols) > 0:
+                        X_raw = X_raw.copy()
+                        X_raw[bool_cols] = X_raw[bool_cols].astype(int)
+                        st.info(f"**Data Processing**: Converted {len(bool_cols)} boolean columns to numeric (True=1, False=0)")
                     
                     # Show missing value summary before processing
                     total_obs = len(df_filtered)
@@ -1803,8 +1811,20 @@ def main():
                         
                         coef_data = []
                         variable_names = (['Intercept'] if include_constant else []) + independent_vars
-                        coefficients = (np.concatenate([[model.intercept_], model.coef_]) if include_constant 
-                                       else model.coef_)
+                        
+                        # Handle coefficient concatenation properly for different model types
+                        if include_constant:
+                            if estimation_method == 'Logistic Regression':
+                                # For logistic regression: intercept_ is (1,) and coef_ is (1, n_features)
+                                coefficients = np.concatenate([model.intercept_, model.coef_.flatten()])
+                            else:
+                                # For linear models: both are 1D arrays
+                                coefficients = np.concatenate([[model.intercept_], model.coef_])
+                        else:
+                            if estimation_method == 'Logistic Regression':
+                                coefficients = model.coef_.flatten()
+                            else:
+                                coefficients = model.coef_
                         
                         for i, var_name in enumerate(variable_names):
                             coef_entry = {
