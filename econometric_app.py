@@ -17,6 +17,7 @@ from plotly.subplots import make_subplots
 from io import StringIO
 import openpyxl
 from datetime import datetime, date
+import pytz
 import json
 import requests
 import os
@@ -28,7 +29,9 @@ def track_app_usage():
     Creates and maintains usage statistics in a local JSON file.
     """
     usage_file = "app_usage_stats.json"
-    current_time = datetime.now()
+    # Use US Central Time
+    central_tz = pytz.timezone('US/Central')
+    current_time = datetime.now(central_tz)
     today = current_time.strftime("%Y-%m-%d")
     current_hour = current_time.hour
     
@@ -346,7 +349,7 @@ def send_feedback_email(feedback_text):
             return False  # Daily limit reached
         
         # Save feedback locally as backup
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.now(pytz.timezone('US/Central')).strftime("%Y-%m-%d %H:%M:%S CST")
         feedback_entry = f"\n--- Feedback submitted on {timestamp} ---\n{feedback_text}\n"
         
         with open("user_feedback.txt", "a", encoding="utf-8") as f:
@@ -467,11 +470,19 @@ Source: Streamlit App
     except Exception as e:
         return True  # Graceful fallback
 
-def create_interactive_tree_plot(model, feature_names, class_names=None, max_depth=None):
+def create_interactive_tree_plot(model, feature_names, class_names=None, max_depth=None, prob_class_index=0):
     """
     Clean, simple decision tree visualization with proper node sizes and all depths visible.
     """
     tree = model.tree_
+    
+    # Validate prob_class_index for binary classification
+    if class_names is not None and len(class_names) == 2:
+        if prob_class_index not in [0, 1]:
+            prob_class_index = 0  # Default to class 0 if invalid
+    elif class_names is not None:
+        # For multiclass, default to 0
+        prob_class_index = 0
     
     # Simple recursive function to calculate node positions with spacing for variable-sized nodes
     def calculate_positions(node_id=0, x=0, y=0, level=0, h_spacing=160):
@@ -605,7 +616,12 @@ def create_interactive_tree_plot(model, feature_names, class_names=None, max_dep
             continue
         if class_names is not None:  # Classification
             probs = tree.value[node_id][0] / tree.value[node_id][0].sum()
-            all_values.append(float(probs.max()))
+            # Use specified class probability, with better validation
+            if prob_class_index < len(probs):
+                all_values.append(float(probs[prob_class_index]))
+            else:
+                # Fallback to class 0 if index is invalid
+                all_values.append(float(probs[0]))
         else:  # Regression
             all_values.append(float(tree.value[node_id][0][0]))
     
@@ -670,7 +686,12 @@ def create_interactive_tree_plot(model, feature_names, class_names=None, max_dep
         
         if class_names is not None:  # Classification
             probs = tree.value[node_id][0] / tree.value[node_id][0].sum()
-            main_value = float(probs.max())
+            # Use specified class probability, with better validation
+            if prob_class_index < len(probs):
+                main_value = float(probs[prob_class_index])
+            else:
+                # Fallback to class 0 if index is invalid
+                main_value = float(probs[0])
         else:  # Regression
             main_value = float(tree.value[node_id][0][0])
         
@@ -712,12 +733,18 @@ def create_interactive_tree_plot(model, feature_names, class_names=None, max_dep
         if class_names is not None:  # Classification
             probs = tree.value[node_id][0] / tree.value[node_id][0].sum()
             class_probs_text = "<br>".join([f"{class_names[i]}: {prob:.3f}" for i, prob in enumerate(probs)])
+            
+            # Show which probability is being displayed
+            displayed_class = class_names[prob_class_index] if len(class_names) > prob_class_index else "Max Class"
+            displayed_prob_text = f"<br><b>Displayed Probability ({displayed_class}): {main_value:.3f}</b>"
+            
             hover_text = f"""
             <b>Node {node_id}</b><br>
             Level: {level}<br>
             Samples: {samples}<br>
             Percentage: {percentage:.1f}%<br>
-            <br><b>Class Probabilities:</b><br>
+            {displayed_prob_text}<br>
+            <br><b>All Class Probabilities:</b><br>
             {class_probs_text}<br>
             <br>Predicted Class: {class_names[probs.argmax()]}<br>
             Confidence: {probs.max():.3f}
@@ -869,7 +896,7 @@ def create_interactive_tree_plot(model, feature_names, class_names=None, max_dep
             xanchor='center'
         )
     
-    return fig
+        return fig
 
 def create_forest_importance_plot(model, feature_names):
     """
@@ -1962,11 +1989,27 @@ def main():
                     )
                 else:
                     n_estimators = 100
+                
+                # Probability Display Settings for Binary Classification
+                if is_binary:
+                    st.sidebar.markdown("---")
+                    st.sidebar.markdown("**🎯 Probability Display (Binary Classification):**")
+                    prob_class_choice = st.sidebar.radio(
+                        "Show probability for:",
+                        options=["Class 0 (typically negative/false)", "Class 1 (typically positive/true)"],
+                        index=0,
+                        help="Choose which class probability to display on tree nodes for binary classification"
+                    )
+                    prob_class_index = 0 if "Class 0" in prob_class_choice else 1
+                else:
+                    prob_class_index = 0  # Default for non-binary variables
+                
             else:
                 max_depth = None
                 min_samples_split = 2
                 min_samples_leaf = 1
                 n_estimators = 100
+                prob_class_index = 0  # Default for non-tree methods
             
             # Missing Values Summary for Selected Variables (show in main area after variables are selected)
             if dependent_var and independent_vars:
@@ -2262,44 +2305,58 @@ def main():
                                 model, 
                                 independent_vars, 
                                 class_names=class_names,
-                                max_depth=max_depth_display
+                                max_depth=max_depth_display,
+                                prob_class_index=prob_class_index
                             )
                             
                             # Display tree matching expected image format
-                            st.info("� Tree visualization shows probabilities and percentages clearly displayed on each node. Colors indicate confidence levels.")
+                            # Display dynamic info message based on probability selection
+                            if class_names and len(class_names) == 2:
+                                selected_class = class_names[prob_class_index]
+                                st.info(f"🌳 Tree visualization shows probability for **{selected_class}** and sample percentages on each node. Colors indicate probability levels. Hover over nodes for detailed information.")
+                            else:                            st.info("� Tree visualization shows probabilities and percentages clearly displayed on each node. Colors indicate confidence levels.")
                             
-                            # Show tree directly in interface with full-screen capability
-                            st.plotly_chart(tree_fig, use_container_width=False, config={'displayModeBar': True, 'displaylogo': False, 'modeBarButtonsToAdd': ['pan2d', 'zoom2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'resetScale2d']})  # Enable full toolbar with zoom controls
-                            
-                            # Optional full screen view
-                            if st.button("🔍 Open Tree in New Browser Tab (Full Screen)", key="open_tree_new_tab"):
-                                # Create HTML file for new window
-                                html_str = tree_fig.to_html(include_plotlyjs='cdn', div_id="tree_plot")
-                                
-                                # Save to temporary HTML file
-                                import tempfile
-                                import webbrowser
-                                
-                                with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False) as f:
-                                    f.write(html_str)
-                                    temp_file = f.name
-                                
-                                st.success(f"✅ Tree opened in new browser tab!")
-                                st.balloons()
+                            # Show tree directly in interface with improved button configuration
+                            st.success("💡 **Tip:** Click the fullscreen button (⛶) in the top-right corner of the plot for the best viewing experience!")
+                            st.plotly_chart(tree_fig, use_container_width=True, config={
+                                'displayModeBar': True, 
+                                'displaylogo': False,
+                                'modeBarButtonsToRemove': ['lasso2d', 'select2d'],
+                                'toImageButtonOptions': {
+                                    'format': 'png',
+                                    'filename': 'decision_tree',
+                                    'height': 1200,
+                                    'width': 1600,
+                                    'scale': 2
+                                }
+                            })
                             
                             # Single download option matching display format
                             st.markdown("### 📥 Download Tree Visualization")
                             
                             # Configure for high-quality PNG export matching display
                             export_fig = tree_fig  # Use same figure
-                            png_bytes = export_fig.to_image(format="png", width=1200, height=1000, scale=2)
-                            
+                            try:
+                                png_bytes = export_fig.to_image(format="png", width=1200, height=1000, scale=2)
+                                
+                                st.download_button(
+                                    label="📸 Download PNG (High Quality)",
+                                    data=png_bytes,
+                                    file_name=f"decision_tree_{datetime.now(pytz.timezone('US/Central')).strftime('%Y%m%d_%H%M%S')}.png",
+                                    mime="image/png",
+                                    help="Download high-resolution PNG showing probabilities and percentages clearly"
+                                )
+                            except Exception as e:
+                                st.warning("⚠️ PNG download requires the kaleido package. Install with: pip install kaleido")
+                                
+                            # Alternative: HTML download (always available)
+                            html_str = tree_fig.to_html(include_plotlyjs='cdn')
                             st.download_button(
-                                label="📸 Download PNG (High Quality)",
-                                data=png_bytes,
-                                file_name=f"decision_tree_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
-                                mime="image/png",
-                                help="Download high-resolution PNG showing probabilities and percentages clearly"
+                                label="📁 Download Tree (HTML)",
+                                data=html_str,
+                                file_name=f"decision_tree_{datetime.now(pytz.timezone('US/Central')).strftime('%Y%m%d_%H%M%S')}.html",
+                                mime="text/html",
+                                help="Download interactive tree as HTML file (always available)"
                             )
                             
                             # Track visualization creation
@@ -2334,9 +2391,22 @@ def main():
                                 model.estimators_[tree_index], 
                                 independent_vars, 
                                 class_names=class_names,
-                                max_depth=max_depth_display
+                                max_depth=max_depth_display,
+                                prob_class_index=prob_class_index
                             )
-                            st.plotly_chart(individual_tree_fig, use_container_width=False, config={'displayModeBar': True, 'displaylogo': False, 'modeBarButtonsToAdd': ['pan2d', 'zoom2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'resetScale2d']})  # Enable full toolbar with zoom controls
+                            st.success("💡 **Tip:** Click the fullscreen button (⛶) in the top-right corner of the plot for the best viewing experience!")
+                            st.plotly_chart(individual_tree_fig, use_container_width=True, config={
+                                'displayModeBar': True, 
+                                'displaylogo': False,
+                                'modeBarButtonsToRemove': ['lasso2d', 'select2d'],
+                                'toImageButtonOptions': {
+                                    'format': 'png',
+                                    'filename': 'random_forest_tree',
+                                    'height': 1200,
+                                    'width': 1600,
+                                    'scale': 2
+                                }
+                            })
                             
                             # Download button for random forest individual tree
                             col1, col2, col3 = st.columns([1, 1, 2])
@@ -2346,7 +2416,8 @@ def main():
                                     model.estimators_[tree_index], 
                                     independent_vars, 
                                     class_names=class_names,
-                                    max_depth=max_depth_display
+                                    max_depth=max_depth_display,
+                                    prob_class_index=prob_class_index
                                 )
                                 export_individual_fig.update_layout(
                                     width=2000,  # Extra wide for export
@@ -2752,7 +2823,7 @@ def main():
         )
     
     # Show current session info
-    st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Session ID: {id(st.session_state)}")
+    st.caption(f"Last updated: {datetime.now(pytz.timezone('US/Central')).strftime('%Y-%m-%d %H:%M:%S CST')} | Session ID: {id(st.session_state)}")
     
     if uploaded_file is None:
         st.markdown("""
