@@ -9,7 +9,7 @@ from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.model_selection import cross_val_score, GridSearchCV, KFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer, KNNImputer
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, mean_squared_error, log_loss
 from scipy import stats
 import plotly.express as px
 import plotly.graph_objects as go
@@ -1177,8 +1177,6 @@ def find_optimal_ccp_alpha(X, y, model_class, cv_folds=5, **model_params):
     3. Use K-fold cross-validation to choose optimal alpha
     4. Return the optimal alpha value
     """
-    from sklearn.model_selection import KFold
-    from sklearn.metrics import mean_squared_error
     
     # Step 1: Grow a large tree (without depth limit for initial tree)
     large_tree_params = model_params.copy()
@@ -1219,12 +1217,10 @@ def find_optimal_ccp_alpha(X, y, model_class, cv_folds=5, **model_params):
             
             # Use appropriate metric based on model type
             if hasattr(fold_model, 'predict_proba'):  # Classification
-                from sklearn.metrics import log_loss
                 try:
                     y_pred_proba = fold_model.predict_proba(X_val_fold)
                     score = -log_loss(y_val_fold, y_pred_proba)  # Negative for maximization
                 except:
-                    from sklearn.metrics import accuracy_score
                     score = accuracy_score(y_val_fold, y_pred)
             else:  # Regression
                 score = -mean_squared_error(y_val_fold, y_pred)  # Negative MSE for maximization
@@ -1449,6 +1445,10 @@ def optimize_regularization_parameters(X, y, method, fit_intercept=True, cv_fold
 def main():
     # Initialize usage tracking (must be called early)
     usage_data = track_app_usage()
+    
+    # Initialize session state for model run counter (needed for tracking even when hidden)
+    if 'models_run_count' not in st.session_state:
+        st.session_state.models_run_count = 0
     
     # Check for owner access to analytics
     show_analytics_option = False
@@ -2558,8 +2558,6 @@ def main():
                                         min_samples_split=min_samples_split, min_samples_leaf=min_samples_leaf,
                                         n_estimators=n_estimators, enable_pruning=enable_pruning,
                                         cv_folds=cv_folds, pruning_method=pruning_method, manual_alpha=manual_alpha)
-                        # Track model run
-                        track_feature_usage("model_runs")
                         
                         # Calculate stats on scaled data
                         if model_type == 'classification':
@@ -2574,8 +2572,6 @@ def main():
                                         min_samples_split=min_samples_split, min_samples_leaf=min_samples_leaf,
                                         n_estimators=n_estimators, enable_pruning=enable_pruning,
                                         cv_folds=cv_folds, pruning_method=pruning_method, manual_alpha=manual_alpha)
-                        # Track model run
-                        track_feature_usage("model_runs")
                         # Calculate stats on original data
                         if model_type == 'classification':
                             stats_dict = calculate_classification_metrics(X, y, model, estimation_method)
@@ -3157,10 +3153,6 @@ def main():
     if st.session_state.get('show_analytics', False):
         st.markdown("---")
         st.markdown("### App Usage Statistics")
-        
-        # Initialize session state for model run counter if it doesn't exist
-        if 'models_run_count' not in st.session_state:
-            st.session_state.models_run_count = 0
         
         # Get persistent usage statistics from file
         usage_file = "app_usage_stats.json"
