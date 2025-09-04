@@ -1489,14 +1489,8 @@ def main():
         • 📊 **Better Tree Visualizations**
         """)
         
-        # Link to full changelog
-        if st.button("📄 View Full Changelog"):
-            try:
-                with open("CHANGELOG.md", "r") as f:
-                    changelog_content = f.read()
-                st.text_area("Complete Version History", changelog_content, height=300)
-            except FileNotFoundError:
-                st.error("Changelog file not found")
+        # Simplified changelog access
+        st.markdown("📄 **[View Complete Changelog](https://github.com/rabbitfxzx2010/econometric-analysis-tool/blob/main/CHANGELOG.md)**")
     
     if page == "📈 Usage Analytics (Owner)" and st.session_state.show_analytics:
         # Display usage analytics dashboard
