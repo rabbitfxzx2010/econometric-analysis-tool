@@ -102,30 +102,55 @@ def track_feature_usage(feature_name):
     usage_file = "app_usage_stats.json"
     today = date.today().strftime("%Y-%m-%d")
     
+    # Load or initialize usage data safely
+    usage_data = {}
     if os.path.exists(usage_file):
         try:
             with open(usage_file, "r") as f:
                 usage_data = json.load(f)
-        except:
-            return
-        
-        # Update feature usage
-        if feature_name in usage_data["feature_usage"]:
-            usage_data["feature_usage"][feature_name] += 1
-        
-        # Update daily feature usage
-        if today in usage_data["daily_stats"]:
-            if feature_name == "model_runs":
-                usage_data["daily_stats"][today]["models_run"] += 1
-            elif feature_name == "file_uploads":
-                usage_data["daily_stats"][today]["files_uploaded"] += 1
-        
-        # Save updated data
-        try:
-            with open(usage_file, "w") as f:
-                json.dump(usage_data, f, indent=2)
-        except:
-            pass
+        except Exception as e:
+            # Corrupt file or unreadable — start fresh but keep user informed
+            st.warning(f"Could not read usage file, reinitializing usage stats: {e}")
+            usage_data = {}
+
+    # Ensure structure exists
+    if "feature_usage" not in usage_data:
+        usage_data["feature_usage"] = {
+            "file_uploads": 0,
+            "model_runs": 0,
+            "visualizations_created": 0,
+            "downloads": 0
+        }
+    if "daily_stats" not in usage_data:
+        usage_data["daily_stats"] = {}
+
+    # Update feature usage safely
+    if feature_name in usage_data["feature_usage"]:
+        usage_data["feature_usage"][feature_name] += 1
+    else:
+        # If unknown feature, create and increment
+        usage_data["feature_usage"][feature_name] = usage_data["feature_usage"].get(feature_name, 0) + 1
+
+    # Update daily feature usage counters
+    if today not in usage_data["daily_stats"]:
+        usage_data["daily_stats"][today] = {
+            "sessions": 0,
+            "unique_users": [],
+            "models_run": 0,
+            "files_uploaded": 0
+        }
+
+    if feature_name == "model_runs":
+        usage_data["daily_stats"][today]["models_run"] = usage_data["daily_stats"][today].get("models_run", 0) + 1
+    elif feature_name == "file_uploads":
+        usage_data["daily_stats"][today]["files_uploaded"] = usage_data["daily_stats"][today].get("files_uploaded", 0) + 1
+
+    # Save updated data
+    try:
+        with open(usage_file, "w") as f:
+            json.dump(usage_data, f, indent=2)
+    except Exception as e:
+        st.warning(f"Failed to save usage data: {e}")
 
 def display_usage_analytics():
     """
@@ -925,8 +950,9 @@ def create_interactive_tree_plot(model, feature_names, class_names=None, max_dep
             font=dict(size=11, color='black', family='Arial'),
             xanchor='center'
         )
-    
-        return fig
+
+    # Always return the figure (previously indented inside the if-block)
+    return fig
 
 def create_forest_importance_plot(model, feature_names):
     """
@@ -2405,16 +2431,68 @@ def main():
                     
                     if pruning_method == "Manual Alpha":
                         st.sidebar.markdown("**Cost Complexity Alpha (α)**")
-                        st.sidebar.markdown("*Valid range: 0.0 to 0.1 (higher values = more pruning)*")
-                        st.sidebar.markdown("*⚠️ Values > 0.05 may result in very small trees*")
-                        manual_alpha = st.sidebar.number_input(
-                            "Enter alpha value:",
-                            min_value=0.0,
-                            max_value=0.1,
-                            value=0.01,
-                            format="%.4f",
-                            help="Recommended: 0.001-0.05. Higher values create smaller trees. Values > 0.05 may over-prune."
+                        
+                        # Get automatic alpha for reference if possible
+                        auto_max = None  # Initialize to avoid scope issues
+                        try:
+                            # Try to calculate automatic alpha for guidance
+                            if 'X_train' in st.session_state and 'y_train' in st.session_state:
+                                from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
+                                temp_model = DecisionTreeRegressor(random_state=42)
+                                temp_model.fit(st.session_state.X_train, st.session_state.y_train)
+                                path = temp_model.cost_complexity_pruning_path(st.session_state.X_train, st.session_state.y_train)
+                                ccp_alphas = path.ccp_alphas[:-1]  # Remove last (empty tree)
+                                if len(ccp_alphas) > 0:
+                                    # Get optimal alpha using same CV logic
+                                    from econometric_app import find_optimal_ccp_alpha
+                                    optimal_alpha, _ = find_optimal_ccp_alpha(
+                                        st.session_state.X_train, st.session_state.y_train, 
+                                        DecisionTreeRegressor, cv_folds, random_state=42
+                                    )
+                                    auto_min, auto_max = ccp_alphas.min(), ccp_alphas.max()
+                                    st.sidebar.markdown(f"*💡 For this dataset, automatic method explores α range: {auto_min:.6f} to {auto_max:.6f}*")
+                                    st.sidebar.markdown(f"*💡 Automatic optimal α: {optimal_alpha:.6f} - use similar magnitude*")
+                                else:
+                                    st.sidebar.markdown("*💡 Use α values in similar magnitude to automatic optimal values*")
+                            else:
+                                st.sidebar.markdown("*💡 Use α values in similar magnitude to automatic optimal values*")
+                        except:
+                            st.sidebar.markdown("*💡 Use α values in similar magnitude to automatic optimal values*")
+                        
+                        st.sidebar.markdown("*Higher values = more pruning (smaller trees)*")
+                        # Use a text input so users can type any positive number (no spinner buttons)
+                        alpha_text = st.sidebar.text_input(
+                            "Enter alpha value (positive number):",
+                            value="0.01",
+                            help="Enter any positive numeric value. Leave blank to cancel manual alpha."
                         )
+
+                        manual_alpha = None
+                        if alpha_text is not None and alpha_text.strip() != "":
+                            try:
+                                parsed_alpha = float(alpha_text)
+                                if parsed_alpha < 0:
+                                    st.sidebar.error("Alpha must be a non-negative number.")
+                                    manual_alpha = None
+                                else:
+                                    manual_alpha = parsed_alpha
+                                    # If automatic alpha range was computed above, warn when manual alpha is much larger
+                                    if auto_max is not None:
+                                        try:
+                                            if manual_alpha > max(auto_max * 5, auto_max + 1e-12):
+                                                st.sidebar.warning(
+                                                    f"⚠️ Manual α ({manual_alpha:.6g}) is much larger than the automatic range max ({auto_max:.6g}).\n"
+                                                    "Very large values may over-prune the tree and cause the visualization to fail."
+                                                )
+                                            elif manual_alpha > auto_max:
+                                                st.sidebar.info(
+                                                    f"Note: Manual α ({manual_alpha:.6g}) is larger than the automatic range max ({auto_max:.6g}). This may produce a smaller tree."
+                                                )
+                                        except Exception:
+                                            pass
+                            except ValueError:
+                                st.sidebar.error("Please enter a valid numeric value for alpha.")
+                                manual_alpha = None
                     else:
                         manual_alpha = None
                 else:
