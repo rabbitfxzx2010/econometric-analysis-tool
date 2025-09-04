@@ -1181,7 +1181,7 @@ def find_optimal_ccp_alpha(X, y, model_class, cv_folds=5, **model_params):
     # Step 1: Grow a large tree (without depth limit for initial tree)
     large_tree_params = model_params.copy()
     large_tree_params['max_depth'] = None  # Remove depth limit for initial large tree
-    large_tree = model_class(**large_tree_params, random_state=42)
+    large_tree = model_class(**large_tree_params)
     large_tree.fit(X, y)
     
     # Step 2: Get cost complexity pruning path (sequence of alpha values and corresponding subtrees)
@@ -1209,7 +1209,7 @@ def find_optimal_ccp_alpha(X, y, model_class, cv_folds=5, **model_params):
             # Train model with current alpha
             model_params_alpha = model_params.copy()
             model_params_alpha['ccp_alpha'] = alpha
-            fold_model = model_class(**model_params_alpha, random_state=42)
+            fold_model = model_class(**model_params_alpha)
             fold_model.fit(X_train_fold, y_train_fold)
             
             # Evaluate on validation fold
@@ -1458,7 +1458,7 @@ def main():
     # Secret access to analytics (only for creator)
     if st.sidebar.checkbox("🔒 Owner Access", value=False, help="For app creator only"):
         owner_password = st.sidebar.text_input("Enter owner password:", type="password")
-        if owner_password == "econometric_admin_2025":  # Change this password as needed
+        if owner_password == "4693943198":  # Change this password as needed
             st.session_state.show_analytics = True
             show_analytics_option = True
     
@@ -1472,6 +1472,31 @@ def main():
         nav_options,
         help="Select Main App for normal use" + (" or Usage Analytics to view app usage statistics" if show_analytics_option else "")
     )
+    
+    # Version information and changelog in sidebar
+    st.sidebar.markdown("---")
+    with st.sidebar.expander("📋 Version Info & Changelog", expanded=False):
+        st.markdown("**Current Version:** 2.1.0")
+        st.markdown("**Release Date:** September 4, 2025")
+        
+        # Show recent updates
+        st.markdown("**Recent Updates:**")
+        st.markdown("""
+        • 🌳 **Cost Complexity Pruning** for Decision Trees
+        • ⚙️ **Enhanced Regularization Controls** 
+        • 🎯 **Improved Binary Classification**
+        • 🔒 **Hidden Usage Analytics**
+        • 📊 **Better Tree Visualizations**
+        """)
+        
+        # Link to full changelog
+        if st.button("📄 View Full Changelog"):
+            try:
+                with open("CHANGELOG.md", "r") as f:
+                    changelog_content = f.read()
+                st.text_area("Complete Version History", changelog_content, height=300)
+            except FileNotFoundError:
+                st.error("Changelog file not found")
     
     if page == "📈 Usage Analytics (Owner)" and st.session_state.show_analytics:
         # Display usage analytics dashboard
@@ -2661,7 +2686,7 @@ def main():
                         
                         if estimation_method == "Decision Tree":
                             # Create interactive decision tree plot
-                            max_depth_display = st.slider("Maximum depth to display", 1, 10, min(5, model.get_depth()))
+                            max_depth_display = min(5, model.get_depth())  # Use default depth
                             
                             # Determine if classification or regression
                             if hasattr(model, 'classes_'):
@@ -2750,7 +2775,7 @@ def main():
                             # Individual tree visualization
                             st.subheader("Individual Tree Visualization")
                             tree_index = st.slider("Select tree to visualize", 0, len(model.estimators_)-1, 0)
-                            max_depth_display = st.slider("Maximum depth to display", 1, 10, min(5, model.estimators_[tree_index].get_depth()))
+                            max_depth_display = min(5, model.estimators_[tree_index].get_depth())  # Use default depth
                             
                             # Determine if classification or regression
                             if hasattr(model, 'classes_'):
