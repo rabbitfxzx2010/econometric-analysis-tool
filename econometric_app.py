@@ -1454,43 +1454,17 @@ def main():
     show_analytics_option = False
     if "show_analytics" not in st.session_state:
         st.session_state.show_analytics = False
-    
-    # Secret access to analytics (only for creator)
-    if st.sidebar.checkbox("🔒 Owner Access", value=False, help="For app creator only"):
-        owner_password = st.sidebar.text_input("Enter owner password:", type="password")
-        if owner_password == "4693943198":  # Change this password as needed
-            st.session_state.show_analytics = True
-            show_analytics_option = True
-    
+
     # Navigation options
     nav_options = ["📊 Main App"]
     if show_analytics_option or st.session_state.show_analytics:
         nav_options.append("📈 Usage Analytics (Owner)")
-    
+
     page = st.sidebar.selectbox(
         "Navigation",
         nav_options,
         help="Select Main App for normal use" + (" or Usage Analytics to view app usage statistics" if show_analytics_option else "")
     )
-    
-    # Version information and changelog in sidebar
-    st.sidebar.markdown("---")
-    with st.sidebar.expander("📋 Version Info & Changelog", expanded=False):
-        st.markdown("**Current Version:** 2.1.0")
-        st.markdown("**Release Date:** September 4, 2025")
-        
-        # Show recent updates
-        st.markdown("**Recent Updates:**")
-        st.markdown("""
-        • 🌳 **Cost Complexity Pruning** for Decision Trees
-        • ⚙️ **Enhanced Regularization Controls** 
-        • 🎯 **Improved Binary Classification**
-        • 🔒 **Hidden Usage Analytics**
-        • 📊 **Better Tree Visualizations**
-        """)
-        
-        # Simplified changelog access
-        st.markdown("📄 **[View Complete Changelog](https://github.com/rabbitfxzx2010/econometric-analysis-tool/blob/main/CHANGELOG.md)**")
     
     if page == "📈 Usage Analytics (Owner)" and st.session_state.show_analytics:
         # Display usage analytics dashboard
@@ -2347,14 +2321,15 @@ def main():
                     )
                     
                     if pruning_method == "Manual Alpha":
+                        st.sidebar.markdown("**Cost Complexity Alpha (α)**")
+                        st.sidebar.markdown("*Valid range: 0.0 to 1.0 (higher values = more pruning)*")
                         manual_alpha = st.sidebar.number_input(
-                            "Cost Complexity Alpha",
+                            "Enter alpha value:",
                             min_value=0.0,
                             max_value=1.0,
                             value=0.01,
-                            step=0.001,
-                            format="%.4f",
-                            help="Manual setting for cost complexity parameter (higher = more pruning)"
+                            format="%.6f",
+                            help="Typical values: 0.001-0.1. Higher values create smaller, more pruned trees."
                         )
                     else:
                         manual_alpha = None
@@ -3159,6 +3134,34 @@ def main():
             
             else:
                 st.sidebar.warning("⚠️ Please select at least one independent variable.")
+            
+            # Owner Access and Version Information at bottom of sidebar
+            st.sidebar.markdown("---")
+            
+            # Secret access to analytics (only for creator)
+            if st.sidebar.checkbox("🔒 Owner Access", value=False, help="For app creator only"):
+                owner_password = st.sidebar.text_input("Enter owner password:", type="password")
+                if owner_password == "4693943198":  # Change this password as needed
+                    st.session_state.show_analytics = True
+                    show_analytics_option = True
+            
+            # Version information and changelog in sidebar
+            with st.sidebar.expander("📋 Version Info & Changelog", expanded=False):
+                st.markdown("**Current Version:** 2.1.0")
+                st.markdown("**Release Date:** September 4, 2025")
+                
+                # Show recent updates
+                st.markdown("**Recent Updates:**")
+                st.markdown("""
+                • 🌳 **Cost Complexity Pruning** for Decision Trees
+                • ⚙️ **Enhanced Regularization Controls** 
+                • 🎯 **Improved Binary Classification**
+                • 🔒 **Hidden Usage Analytics**
+                • 📊 **Better Tree Visualizations**
+                """)
+                
+                # Simplified changelog access
+                st.markdown("📄 **[View Complete Changelog](https://github.com/rabbitfxzx2010/econometric-analysis-tool/blob/main/CHANGELOG.md)**")
         
         except Exception as e:
             st.error(f"❌ Error reading the file: {str(e)}")
