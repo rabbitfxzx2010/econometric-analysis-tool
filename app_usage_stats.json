@@ -1,0 +1,46 @@
+{
+  "total_sessions": 60,
+  "daily_stats": {
+    "2025-09-02": {
+      "sessions": 60,
+      "unique_users": [],
+      "models_run": 28,
+      "files_uploaded": 105
+    }
+  },
+  "hourly_distribution": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 54,
+    "6": 0,
+    "7": 0,
+    "8": 0,
+    "9": 0,
+    "10": 0,
+    "11": 0,
+    "12": 0,
+    "13": 6,
+    "14": 0,
+    "15": 0,
+    "16": 0,
+    "17": 0,
+    "18": 0,
+    "19": 0,
+    "20": 0,
+    "21": 0,
+    "22": 0,
+    "23": 0
+  },
+  "feature_usage": {
+    "file_uploads": 105,
+    "model_runs": 28,
+    "visualizations_created": 28,
+    "downloads": 0
+  },
+  "first_use": "2025-09-02 05:16:07",
+  "last_access": "2025-09-02 13:42:04",
+  "total_models_run": 14
+}

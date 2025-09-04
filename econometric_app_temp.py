@@ -17,7 +17,6 @@ from plotly.subplots import make_subplots
 from io import StringIO
 import openpyxl
 from datetime import datetime, date
-import pytz
 import json
 import requests
 import os
@@ -29,9 +28,7 @@ def track_app_usage():
     Creates and maintains usage statistics in a local JSON file.
     """
     usage_file = "app_usage_stats.json"
-    # Use US Central Time
-    central_tz = pytz.timezone('US/Central')
-    current_time = datetime.now(central_tz)
+    current_time = datetime.now()
     today = current_time.strftime("%Y-%m-%d")
     current_hour = current_time.hour
     
@@ -349,7 +346,7 @@ def send_feedback_email(feedback_text):
             return False  # Daily limit reached
         
         # Save feedback locally as backup
-        timestamp = datetime.now(pytz.timezone('US/Central')).strftime("%Y-%m-%d %H:%M:%S CST")
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         feedback_entry = f"\n--- Feedback submitted on {timestamp} ---\n{feedback_text}\n"
         
         with open("user_feedback.txt", "a", encoding="utf-8") as f:
@@ -470,257 +467,297 @@ Source: Streamlit App
     except Exception as e:
         return True  # Graceful fallback
 
-def create_interactive_tree_plot(model, feature_names, class_names=None, max_depth=None, prob_class_index=0):
+def create_interactive_tree_plot(model, feature_names, class_names=None, max_depth=None):
     """
-    Clean, simple decision tree visualization with proper node sizes and all depths visible.
+    Create an interactive decision tree visualization with probability-based heatmap coloring.
+    Fixed version with visible text and no bottom cutoff.
     """
     tree = model.tree_
+    feature = tree.feature
+    threshold = tree.threshold
+    children_left = tree.children_left
+    children_right = tree.children_right
+    value = tree.value
+    impurity = tree.impurity
+    n_node_samples = tree.n_node_samples
     
-    # Validate prob_class_index for binary classification
-    if class_names is not None and len(class_names) == 2:
-        if prob_class_index not in [0, 1]:
-            prob_class_index = 0  # Default to class 0 if invalid
-    elif class_names is not None:
-        # For multiclass, default to 0
-        prob_class_index = 0
+    # Get total samples for proportion calculation
+    total_samples = int(n_node_samples[0])
     
-    # Simple recursive function to calculate node positions with spacing for variable-sized nodes
-    def calculate_positions(node_id=0, x=0, y=0, level=0, h_spacing=160):
-        if node_id < 0 or node_id >= tree.node_count:
-            return {}
+    # Calculate positions with much wider spacing to prevent overlap
+    def get_tree_positions(node=0, x=0, y=0, level=0, positions=None, spacing_factor=25.0):
+        if positions is None:
+            positions = {}
+            
+        positions[node] = (x, y)
         
-        positions = {node_id: (x, y)}
-        
-        # Stop if we've reached max depth
         if max_depth is not None and level >= max_depth:
             return positions
         
-        # Get children
-        left_child = tree.children_left[node_id]
-        right_child = tree.children_right[node_id]
-        
-        # If this is not a leaf node
-        if left_child != right_child:
-            # Spacing increases for higher levels (bigger nodes) and decreases for lower levels
-            level_factor = max(1.0 - (level * 0.2), 0.4)  # Reduces spacing as depth increases
-            spacing = max(h_spacing * level_factor / (1 + level * 0.2), 45)  # Min 45 to prevent overlap
-            child_y = y - 24  # More vertical spacing for edge labels and larger top nodes
+        if int(children_left[node]) != int(children_right[node]):  # Not a leaf
+            # Use much wider spacing with very slow reduction to prevent overlap
+            spacing = spacing_factor / (level * 0.2 + 1)  # Much slower spacing reduction
             
-            # Add left child
-            if left_child >= 0:
-                left_positions = calculate_positions(left_child, x - spacing, child_y, level + 1, h_spacing)
-                positions.update(left_positions)
+            if children_left[node] >= 0:
+                left_child = int(children_left[node])
+                get_tree_positions(left_child, x - spacing, y - 3.5, level + 1, positions, spacing_factor)
             
-            # Add right child  
-            if right_child >= 0:
-                right_positions = calculate_positions(right_child, x + spacing, child_y, level + 1, h_spacing)
-                positions.update(right_positions)
+            if children_right[node] >= 0:
+                right_child = int(children_right[node])
+                get_tree_positions(right_child, x + spacing, y - 3.5, level + 1, positions, spacing_factor)
         
         return positions
     
-    # Calculate all node positions
-    positions = calculate_positions()
+    positions = get_tree_positions()
     
-    # Calculate level-based node sizing (same size within each level)
-    levels = {}
-    for node_id, (x, y) in positions.items():
-        level = int(round((15 - y) / 22))  # Calculate level from y position
-        if level not in levels:
-            levels[level] = []
-        levels[level].append(node_id)
-    
-    max_level = max(levels.keys()) if levels else 0
-    
-    # Simple, clean node sizing based on your reference image proportions
-    # Much more aggressive width reduction for levels 3-5 to prevent overlapping
-    
-    level_sizes = {}
-    for level in range(max_level + 1):
-        # Base sizing that matches your reference image proportions
-        # Much smaller widths for deeper levels
-        if level == 0:  # Root level
-            width = 120
-            height = 40
-            font_size = 14
-        elif level == 1:  # Second level
-            width = 100
-            height = 35
-            font_size = 12
-        elif level == 2:  # Third level  
-            width = 85
-            height = 30
-            font_size = 11
-        elif level == 3:  # Fourth level - much smaller
-            width = 40
-            height = 22
-            font_size = 8
-        elif level == 4:  # Fifth level - very small
-            width = 30
-            height = 18
-            font_size = 7
-        else:  # Sixth level and deeper - extremely small
-            width = 25
-            height = 15
-            font_size = 6
+    # Calculate probability ranges for color scaling
+    all_probabilities = []
+    for n in range(tree.node_count):
+        if max_depth is not None and positions[n][1] < -max_depth * 3.5:
+            continue
         
-        level_sizes[level] = {
-            'width': width,
-            'height': height,
-            'font_size': font_size
-        }
+        if class_names is not None:  # Classification
+            class_probs = value[n][0] / np.sum(value[n][0])
+            max_prob = float(np.max(class_probs))
+            all_probabilities.append(max_prob)
+        else:  # Regression - normalize prediction values
+            predicted_value = float(value[n][0][0])
+            all_probabilities.append(predicted_value)
     
-    # Get Y range with generous padding
-    all_y = [pos[1] for pos in positions.values()]
-    min_y = min(all_y) - 25
-    max_y = max(all_y) + 15
+    if all_probabilities:
+        min_prob, max_prob = min(all_probabilities), max(all_probabilities)
+    else:
+        min_prob, max_prob = 0.0, 1.0
     
-    # Create figure
+    # Create the plot
     fig = go.Figure()
     
-    # Draw edges first
-    for node_id in positions:
-        if node_id >= tree.node_count:
+    # Add edges with labels and improved nodes for maximum visibility
+    for node in range(tree.node_count):
+        if max_depth is not None and positions[node][1] < -max_depth * 3.5:
             continue
             
-        left_child = tree.children_left[node_id]
-        right_child = tree.children_right[node_id]
+        if children_left[node] >= 0:  # Has left child
+            left_child = int(children_left[node])
+            if left_child in positions:
+                x0, y0 = positions[node]
+                x1, y1 = positions[left_child]
+                
+                # Add edge line
+                fig.add_trace(go.Scatter(
+                    x=[x0, x1], y=[y0, y1],
+                    mode='lines',
+                    line=dict(color='black', width=2),
+                    hoverinfo='none',
+                    showlegend=False
+                ))
+                
+                # Add "yes" label on left branch
+                mid_x, mid_y = (x0 + x1) / 2, (y0 + y1) / 2
+                fig.add_annotation(
+                    x=mid_x - 0.2, y=mid_y + 0.2,
+                    text="<b>yes</b>",
+                    showarrow=False,
+                    font=dict(size=12, color='black', family='Arial Bold'),
+                    bgcolor='rgba(255,255,255,0.9)',
+                    bordercolor='black',
+                    borderwidth=1,
+                    borderpad=2
+                )
         
-        x, y = positions[node_id]
-        
-        # Draw edge to left child
-        if left_child >= 0 and left_child in positions:
-            x_child, y_child = positions[left_child]
-            fig.add_trace(go.Scatter(
-                x=[x, x_child], y=[y, y_child],
-                mode='lines',
-                line=dict(color='black', width=2),
-                showlegend=False,
-                hoverinfo='skip'
-            ))
-        
-        # Draw edge to right child
-        if right_child >= 0 and right_child in positions:
-            x_child, y_child = positions[right_child]
-            fig.add_trace(go.Scatter(
-                x=[x, x_child], y=[y, y_child],
-                mode='lines', 
-                line=dict(color='black', width=2),
-                showlegend=False,
-                hoverinfo='skip'
-            ))
+        if children_right[node] >= 0:  # Has right child
+            right_child = int(children_right[node])
+            if right_child in positions:
+                x0, y0 = positions[node]
+                x1, y1 = positions[right_child]
+                
+                # Add edge line  
+                fig.add_trace(go.Scatter(
+                    x=[x0, x1], y=[y0, y1],
+                    mode='lines',
+                    line=dict(color='black', width=2),
+                    hoverinfo='none',
+                    showlegend=False
+                ))
+                
+                # Add "no" label on right branch
+                mid_x, mid_y = (x0 + x1) / 2, (y0 + y1) / 2
+                fig.add_annotation(
+                    x=mid_x + 0.2, y=mid_y + 0.2,
+                    text="<b>no</b>",
+                    showarrow=False,
+                    font=dict(size=12, color='black', family='Arial Bold'),
+                    bgcolor='rgba(255,255,255,0.9)',
+                    bordercolor='black',
+                    borderwidth=1,
+                    borderpad=2
+                )
     
-    # Calculate color scaling values
-    all_values = []
-    for node_id in positions:
-        if node_id >= tree.node_count:
-            continue
-        if class_names is not None:  # Classification
-            probs = tree.value[node_id][0] / tree.value[node_id][0].sum()
-            # Use specified class probability, with better validation
-            if prob_class_index < len(probs):
-                all_values.append(float(probs[prob_class_index]))
-            else:
-                # Fallback to class 0 if index is invalid
-                all_values.append(float(probs[0]))
-        else:  # Regression
-            all_values.append(float(tree.value[node_id][0][0]))
-    
-    min_val = min(all_values) if all_values else 0
-    max_val = max(all_values) if all_values else 1
-    
-    # Create feature mapping with proper abbreviations BEFORE drawing nodes
-    feature_mapping = {}
-    used_features = []
-    abbrev_count = {}
-    
-    # Collect all features used in the tree
-    for node_id in positions:
-        if node_id >= tree.node_count:
-            continue
-        if tree.children_left[node_id] != tree.children_right[node_id]:
-            feature_name = feature_names[tree.feature[node_id]]
-            if feature_name not in used_features:
-                used_features.append(feature_name)
-    
-    # Create abbreviations with numbering for duplicates
-    for feature_name in used_features:
-        # Create base abbreviation (first 3 letters)
-        if len(feature_name) >= 3:
-            base_abbrev = feature_name[:3].lower()
-        else:
-            base_abbrev = feature_name.lower()
-        
-        # Handle duplicates by adding numbers
-        if base_abbrev in abbrev_count:
-            abbrev_count[base_abbrev] += 1
-            final_abbrev = f"{base_abbrev}{abbrev_count[base_abbrev]}"
-        else:
-            abbrev_count[base_abbrev] = 1
-            # Check if there will be future conflicts
-            future_conflicts = [f for f in used_features if f != feature_name and len(f) >= 3 and f[:3].lower() == base_abbrev]
-            if future_conflicts:
-                final_abbrev = f"{base_abbrev}1"
-            else:
-                final_abbrev = base_abbrev
-        
-        feature_mapping[feature_name] = final_abbrev
-    
-    # Draw nodes
-    for node_id in positions:
-        if node_id >= tree.node_count:
+    # Create nodes with enhanced visibility and heatmap coloring
+    for node in range(tree.node_count):
+        if max_depth is not None and positions[node][1] < -max_depth * 3.5:
             continue
             
-        x, y = positions[node_id]
+        x, y = positions[node]
         
-        # Get level-specific sizing
-        level = int(round((15 - y) / 22))
-        node_sizing = level_sizes.get(level, level_sizes[0])
-        node_width = node_sizing['width']
-        node_height = node_sizing['height']
-        font_size = node_sizing['font_size']
+        # Node information
+        samples = int(n_node_samples[node])
+        proportion = samples / total_samples
         
-        # Calculate node value and percentage
-        samples = int(tree.n_node_samples[node_id])
-        total_samples = int(tree.n_node_samples[0])
-        percentage = (samples / total_samples) * 100
+        is_leaf = int(children_left[node]) == int(children_right[node])
         
-        if class_names is not None:  # Classification
-            probs = tree.value[node_id][0] / tree.value[node_id][0].sum()
-            # Use specified class probability, with better validation
-            if prob_class_index < len(probs):
-                main_value = float(probs[prob_class_index])
-            else:
-                # Fallback to class 0 if index is invalid
-                main_value = float(probs[0])
-        else:  # Regression
-            main_value = float(tree.value[node_id][0][0])
+        if is_leaf:  # Leaf node
+            if class_names is not None:  # Classification
+                predicted_class = int(np.argmax(value[node][0]))
+                class_probs = value[node][0] / np.sum(value[node][0])
+                predicted_probability = float(class_probs[predicted_class])
+                
+                # Calculate color intensity for heatmap
+                if max_prob > min_prob:
+                    color_intensity = (predicted_probability - min_prob) / (max_prob - min_prob)
+                else:
+                    color_intensity = predicted_probability
+                
+                # Enhanced heatmap colors: light blue to deep red
+                if color_intensity < 0.2:
+                    node_color = f'rgba(240, 248, 255, 0.95)'  # Very light blue
+                    text_color = 'black'
+                elif color_intensity < 0.4:
+                    node_color = f'rgba(173, 216, 230, 0.95)'  # Light blue
+                    text_color = 'black'
+                elif color_intensity < 0.6:
+                    node_color = f'rgba(255, 140, 105, 0.95)'  # Coral
+                    text_color = 'black'
+                elif color_intensity < 0.8:
+                    node_color = f'rgba(255, 69, 58, 0.95)'   # Red-orange
+                    text_color = 'white'
+                else:
+                    node_color = f'rgba(220, 20, 20, 0.95)'   # Deep red
+                    text_color = 'white'
+                
+                # GUARANTEED VISIBLE text: probability and percentage
+                node_text = f"<b>{predicted_probability:.3f}</b><br><b>{proportion*100:.0f}%</b>"
+                
+                hover_text = (f"<b>LEAF NODE</b><br>"
+                            f"Predicted Class: <b>{class_names[predicted_class]}</b><br>"
+                            f"Probability: <b>{predicted_probability:.3f}</b><br>"
+                            f"Samples: {samples:,}<br>"
+                            f"Percentage: {proportion*100:.1f}%<br>"
+                            f"Confidence Level: {'High' if predicted_probability > 0.8 else 'Medium' if predicted_probability > 0.6 else 'Low'}")
+                            
+            else:  # Regression
+                predicted_value = float(value[node][0][0])
+                
+                # Normalize for color intensity
+                if max_prob > min_prob:
+                    color_intensity = (predicted_value - min_prob) / (max_prob - min_prob)
+                else:
+                    color_intensity = 0.5
+                
+                # Heatmap colors for regression
+                if color_intensity < 0.2:
+                    node_color = f'rgba(240, 248, 255, 0.95)'  # Very light blue
+                    text_color = 'black'
+                elif color_intensity < 0.4:
+                    node_color = f'rgba(173, 216, 230, 0.95)'  # Light blue
+                    text_color = 'black'
+                elif color_intensity < 0.6:
+                    node_color = f'rgba(255, 140, 105, 0.95)'  # Coral
+                    text_color = 'black'
+                elif color_intensity < 0.8:
+                    node_color = f'rgba(255, 69, 58, 0.95)'   # Red-orange
+                    text_color = 'white'
+                else:
+                    node_color = f'rgba(220, 20, 20, 0.95)'   # Deep red
+                    text_color = 'white'
+                
+                node_text = f"<b>{predicted_value:.3f}</b><br><b>{proportion*100:.0f}%</b>"
+                
+                hover_text = (f"<b>LEAF NODE</b><br>"
+                            f"Predicted Value: <b>{predicted_value:.3f}</b><br>"
+                            f"Samples: {samples:,}<br>"
+                            f"Percentage: {proportion*100:.1f}%")
         
-        # Calculate color based on value (keeping your good color scheme)
-        if max_val > min_val:
-            color_intensity = (main_value - min_val) / (max_val - min_val)
-        else:
-            color_intensity = 0.5
+        else:  # Internal node
+            feature_name = feature_names[int(feature[node])]
+            threshold_val = float(threshold[node])
+            
+            if class_names is not None:  # Classification
+                predicted_class = int(np.argmax(value[node][0]))
+                class_probs = value[node][0] / np.sum(value[node][0])
+                predicted_probability = float(class_probs[predicted_class])
+                
+                # Calculate color intensity
+                if max_prob > min_prob:
+                    color_intensity = (predicted_probability - min_prob) / (max_prob - min_prob)
+                else:
+                    color_intensity = predicted_probability
+                
+                # Lighter heatmap colors for internal nodes
+                if color_intensity < 0.2:
+                    node_color = f'rgba(248, 248, 255, 0.9)'  # Ghost white
+                    text_color = 'black'
+                elif color_intensity < 0.4:
+                    node_color = f'rgba(230, 240, 250, 0.9)'  # Light blue
+                    text_color = 'black'
+                elif color_intensity < 0.6:
+                    node_color = f'rgba(255, 200, 180, 0.9)'  # Light coral
+                    text_color = 'black'
+                elif color_intensity < 0.8:
+                    node_color = f'rgba(255, 160, 140, 0.9)'  # Medium coral
+                    text_color = 'black'
+                else:
+                    node_color = f'rgba(240, 100, 80, 0.9)'   # Deep coral
+                    text_color = 'white'
+                
+                node_text = f"<b>{predicted_probability:.3f}</b><br><b>{proportion*100:.0f}%</b>"
+                decision_text = f"<b>{feature_name} < {threshold_val:.2f}</b>"
+                
+                hover_text = (f"<b>DECISION NODE</b><br>"
+                            f"Split Rule: <b>{feature_name} < {threshold_val:.3f}</b><br>"
+                            f"Current Best Probability: <b>{predicted_probability:.3f}</b><br>"
+                            f"Samples: {samples:,}<br>"
+                            f"Percentage: {proportion*100:.1f}%")
+                            
+            else:  # Regression
+                predicted_value = float(value[node][0][0])
+                
+                if max_prob > min_prob:
+                    color_intensity = (predicted_value - min_prob) / (max_prob - min_prob)
+                else:
+                    color_intensity = 0.5
+                
+                # Lighter heatmap colors for internal regression nodes
+                if color_intensity < 0.2:
+                    node_color = f'rgba(248, 248, 255, 0.9)'  # Ghost white
+                    text_color = 'black'
+                elif color_intensity < 0.4:
+                    node_color = f'rgba(230, 240, 250, 0.9)'  # Light blue
+                    text_color = 'black'
+                elif color_intensity < 0.6:
+                    node_color = f'rgba(255, 200, 180, 0.9)'  # Light coral
+                    text_color = 'black'
+                elif color_intensity < 0.8:
+                    node_color = f'rgba(255, 160, 140, 0.9)'  # Medium coral
+                    text_color = 'black'
+                else:
+                    node_color = f'rgba(240, 100, 80, 0.9)'   # Deep coral
+                    text_color = 'white'
+                
+                node_text = f"<b>{predicted_value:.3f}</b><br><b>{proportion*100:.0f}%</b>"
+                decision_text = f"<b>{feature_name} < {threshold_val:.2f}</b>"
+                
+                hover_text = (f"<b>DECISION NODE</b><br>"
+                            f"Split Rule: <b>{feature_name} < {threshold_val:.3f}</b><br>"
+                            f"Current Value: <b>{predicted_value:.3f}</b><br>"
+                            f"Samples: {samples:,}<br>"
+                            f"Percentage: {proportion*100:.1f}%")
         
-        # Your approved color scheme: dark blue (low) to dark red (high) with better text visibility
-        if color_intensity < 0.2:
-            node_color = 'rgba(30, 70, 150, 0.95)'   # Dark blue
-            text_color = 'white'  # White text on dark blue
-        elif color_intensity < 0.4:
-            node_color = 'rgba(173, 216, 230, 0.95)' # Light blue
-            text_color = 'black'  # Black text on light blue
-        elif color_intensity < 0.6:
-            node_color = 'rgba(255, 140, 105, 0.95)' # Light coral
-            text_color = 'black'  # Black text on coral
-        elif color_intensity < 0.8:
-            node_color = 'rgba(255, 69, 58, 0.95)'   # Red-orange
-            text_color = 'white'  # White text on red-orange
-        else:
-            node_color = 'rgba(220, 20, 20, 0.95)'   # Dark red
-            text_color = 'white'  # White text on dark red
+        # Create BIGGER rectangular nodes for better visibility
+        node_width = 1.8   # Even bigger width
+        node_height = 1.2  # Bigger height
         
-        # Draw rectangular node with level-specific sizing
-        # node_width and node_height already set above based on level
-        
+        # Add rectangle with probability-based coloring
         fig.add_shape(
             type="rect",
             x0=x - node_width/2, y0=y - node_height/2,
@@ -729,174 +766,604 @@ def create_interactive_tree_plot(model, feature_names, class_names=None, max_dep
             line=dict(color='black', width=2)
         )
         
-        # Create detailed hover information
-        if class_names is not None:  # Classification
-            probs = tree.value[node_id][0] / tree.value[node_id][0].sum()
-            class_probs_text = "<br>".join([f"{class_names[i]}: {prob:.3f}" for i, prob in enumerate(probs)])
-            
-            # Show which probability is being displayed
-            displayed_class = class_names[prob_class_index] if len(class_names) > prob_class_index else "Max Class"
-            displayed_prob_text = f"<br><b>Displayed Probability ({displayed_class}): {main_value:.3f}</b>"
-            
-            hover_text = f"""
-            <b>Node {node_id}</b><br>
-            Level: {level}<br>
-            Samples: {samples}<br>
-            Percentage: {percentage:.1f}%<br>
-            {displayed_prob_text}<br>
-            <br><b>All Class Probabilities:</b><br>
-            {class_probs_text}<br>
-            <br>Predicted Class: {class_names[probs.argmax()]}<br>
-            Confidence: {probs.max():.3f}
-            """
-        else:  # Regression
-            hover_text = f"""
-            <b>Node {node_id}</b><br>
-            Level: {level}<br>
-            Samples: {samples}<br>
-            Percentage: {percentage:.1f}%<br>
-            <br>Predicted Value: {main_value:.3f}<br>
-            Mean Squared Error: {tree.impurity[node_id]:.3f}
-            """
-        
-        # Add invisible scatter point for hover functionality
-        fig.add_trace(go.Scatter(
-            x=[x], y=[y],
-            mode='markers',
-            marker=dict(size=max(node_width, node_height), color='rgba(0,0,0,0)', opacity=0),
-            hovertext=hover_text,
-            hoverinfo='text',
-            showlegend=False,
-            name=''
-        ))
-        
-        # Add node text: value on top line, percentage on bottom line (2 decimal places)
-        node_text = f"<b>{main_value:.2f}</b><br><b>{percentage:.0f}%</b>"
-        
+        # Add node text with MAXIMUM visibility
         fig.add_annotation(
             x=x, y=y,
             text=node_text,
             showarrow=False,
-            font=dict(size=font_size, color=text_color, family='Arial Bold'),  # Level-specific font size and optimal text color
-            borderwidth=0
+            font=dict(size=24, color=text_color, family='Arial Black'),  # VERY large font
+            bgcolor='rgba(255,255,255,0.4)' if text_color == 'white' else 'rgba(0,0,0,0.2)',
+            bordercolor=text_color,
+            borderwidth=2
         )
         
-        # Add decision rule on the LEFT edge with variable ABOVE and value BELOW
-        if tree.children_left[node_id] != tree.children_right[node_id]:
-            feature_name = feature_names[tree.feature[node_id]]
-            threshold = tree.threshold[node_id]
-            
-            # Use the abbreviation from our mapping
-            abbrev = feature_mapping.get(feature_name, feature_name[:3].lower())
-            
-            # Simplified edge labeling: variable name on LEFT, threshold on RIGHT
-            left_child = tree.children_left[node_id]
-            right_child = tree.children_right[node_id]
-            
-            # LEFT edge: show variable name (green = below threshold)
-            if left_child >= 0 and left_child in positions:
-                x_child, y_child = positions[left_child]
-                mid_x = (x + x_child) / 2
-                mid_y = (y + y_child) / 2
-                
-                # Variable name on left edge (green = below)
-                fig.add_annotation(
-                    x=mid_x, y=mid_y,
-                    text=f"<b>{abbrev}</b>",
-                    showarrow=False,
-                    font=dict(size=12, color='green', family='Arial Bold'),
-                    bgcolor='rgba(255,255,255,0.9)',
-                    bordercolor='green',
-                    borderwidth=1,
-                    borderpad=2
-                )
-            
-            # RIGHT edge: show threshold value (red = above threshold)
-            if right_child >= 0 and right_child in positions:
-                x_child, y_child = positions[right_child]
-                mid_x = (x + x_child) / 2
-                mid_y = (y + y_child) / 2
-                
-                # Threshold value on right edge (red = above)
-                fig.add_annotation(
-                    x=mid_x, y=mid_y,
-                    text=f"<b>{threshold:.1f}</b>",
-                    showarrow=False,
-                    font=dict(size=12, color='red', family='Arial Bold'),
-                    bgcolor='rgba(255,255,255,0.9)',
-                    bordercolor='red',
-                    borderwidth=1,
-                    borderpad=2
-                )
-    
-    # Add heatmap color legend
-    fig.add_trace(go.Scatter(
-        x=[None], y=[None],
-        mode='markers',
-        marker=dict(
-            size=1,
-            color=[min_val, max_val],
-            colorscale=[
-                [0, 'rgb(30,70,150)'],        # Dark blue for small values
-                [0.25, 'rgb(173,216,230)'],   # Light blue
-                [0.5, 'rgb(255,140,105)'],    # Light coral (middle)
-                [0.75, 'rgb(255,69,58)'],     # Red-orange
-                [1, 'rgb(220,20,20)']         # Dark red for big values
-            ],
-            showscale=True,
-            colorbar=dict(
-                title=dict(
-                    text="<b>Probability/Value</b>",
-                    font=dict(size=14, family='Arial Bold')
-                ),
-                thickness=20,
-                len=0.6,
-                x=1.02,
-                tickfont=dict(size=11, family='Arial')
+        # Add decision rule below internal nodes
+        if not is_leaf:
+            fig.add_annotation(
+                x=x, y=y - 1.0,
+                text=decision_text,
+                showarrow=False,
+                font=dict(size=11, color='black', family='Arial Bold'),
+                bgcolor='rgba(255,255,255,0.95)',
+                bordercolor='black',
+                borderwidth=1,
+                borderpad=3
             )
-        ),
-        showlegend=False,
-        name='Color Scale'
-    ))
+        
+        # Add invisible scatter point for hover with larger area
+        fig.add_trace(go.Scatter(
+            x=[x], y=[y],
+            mode='markers',
+            marker=dict(size=50, color='rgba(0,0,0,0)'),
+            hovertext=hover_text,
+            hoverinfo='text',
+            hoverlabel=dict(
+                bgcolor='rgba(255,255,255,0.95)',
+                bordercolor='black',
+                font=dict(size=12, color='black', family='Arial')
+            ),
+            showlegend=False,
+            name=f'Node_{node}'
+        ))
     
-    # Update layout for proper display with legend, wider spacing to prevent overlap
+    # Add color scale legend
+    if class_names is not None:
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None],
+            mode='markers',
+            marker=dict(
+                size=1,
+                color=[min_prob, max_prob],
+                colorscale=[
+                    [0, 'rgb(240,248,255)'],      # Very light blue
+                    [0.2, 'rgb(173,216,230)'],    # Light blue
+                    [0.4, 'rgb(255,140,105)'],    # Coral
+                    [0.6, 'rgb(255,69,58)'],      # Red-orange
+                    [1, 'rgb(220,20,20)']         # Deep red
+                ],
+                showscale=True,
+                colorbar=dict(
+                    title="<b>Probability Level</b>",
+                    titleside="right",
+                    thickness=35,
+                    len=0.8,
+                    x=1.02,
+                    tickfont=dict(size=11, family='Arial Bold')
+                )
+            ),
+            showlegend=False,
+            name='Probability Scale'
+        ))
+    else:
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None],
+            mode='markers',
+            marker=dict(
+                size=1,
+                color=[min_prob, max_prob],
+                colorscale=[
+                    [0, 'rgb(240,248,255)'],      # Very light blue
+                    [0.2, 'rgb(173,216,230)'],    # Light blue
+                    [0.4, 'rgb(255,140,105)'],    # Coral
+                    [0.6, 'rgb(255,69,58)'],      # Red-orange
+                    [1, 'rgb(220,20,20)']         # Deep red
+                ],
+                showscale=True,
+                colorbar=dict(
+                    title="<b>Predicted Value</b>",
+                    titleside="right",
+                    thickness=35,
+                    len=0.8,
+                    x=1.02,
+                    tickfont=dict(size=11, family='Arial Bold')
+                )
+            ),
+            showlegend=False,
+            name='Value Scale'
+        ))
+    
+    # Update layout with MAXIMUM spacing and margins
     fig.update_layout(
-        title="Decision Tree Visualization",
+        title=dict(
+            text="Decision Tree Probability Heatmap<br><sub>Probabilities and percentages displayed - Colors show confidence levels - Hover for details</sub>",
+            font=dict(size=18, color='black'),
+            x=0.5,
+            xanchor='center'
+        ),
         showlegend=False,
         hovermode='closest',
-        margin=dict(b=150, l=150, r=150, t=100),  # More space on left for threshold values
+        margin=dict(b=250, l=150, r=250, t=150),  # VERY large margins to prevent cutoff
+        annotations=[
+            dict(
+                text="HEATMAP STYLE GUIDE:<br>" +
+                     "LIGHT BLUE = Low probability - CORAL/ORANGE = Medium probability - DEEP RED = High probability<br>" +
+                     "Numbers show: Top = probability, Bottom = sample percentage<br>" +
+                     "Decision rules shown below internal nodes",
+                showarrow=False,
+                xref="paper", yref="paper",
+                x=0.5, y=-0.15,
+                xanchor='center', yanchor='top',
+                font=dict(color='rgb(60,60,60)', size=12),
+                bgcolor='rgba(248,248,248,0.9)',
+                bordercolor='gray',
+                borderwidth=1,
+                borderpad=8
+            )
+        ],
         xaxis=dict(
-            showgrid=False,
+            showgrid=False, 
             zeroline=False, 
             showticklabels=False,
-            range=[min([p[0] for p in positions.values()]) - 40, 
-                   max([p[0] for p in positions.values()]) + 40]  # More horizontal space
+            fixedrange=False  # Allow horizontal scrolling
         ),
         yaxis=dict(
-            showgrid=False,
-            zeroline=False,
-            showticklabels=False, 
-            range=[min_y, max_y]
+            showgrid=False, 
+            zeroline=False, 
+            showticklabels=False,
+            fixedrange=True  # Disable vertical zooming/panning
         ),
-        plot_bgcolor='white',
+        plot_bgcolor='rgba(250,250,250,1)',
         paper_bgcolor='white',
-        width=1600,  # Wider to accommodate better spacing
-        height=1200   # Taller for better vertical spacing
+        # Make figure much wider and taller to prevent cutoff
+        width=6000,   # Much wider for better spacing and no overlap
+        height=3500,  # Much taller to prevent bottom cutoff
+        dragmode='pan'  # Enable horizontal scrolling
     )
     
-    # Add feature mapping note at the bottom if there are abbreviated features
-    if feature_mapping:
-        note_text = "Feature abbreviations: " + ", ".join([f"{abbrev} = {full}" for full, abbrev in feature_mapping.items()])
-        fig.add_annotation(
-            x=0.5, y=-0.12,
-            xref='paper', yref='paper',
-            text=note_text,
-            showarrow=False,
-            font=dict(size=11, color='black', family='Arial'),
-            xanchor='center'
-        )
+    return fig
+    tree = model.tree_
+    feature = tree.feature
+    threshold = tree.threshold
+    children_left = tree.children_left
+    children_right = tree.children_right
+    value = tree.value
+    impurity = tree.impurity
+    n_node_samples = tree.n_node_samples
     
-        return fig
+    # Get total samples for proportion calculation
+    total_samples = int(n_node_samples[0])
+    
+    # Calculate positions with much wider spacing to prevent overlap
+    def get_tree_positions(node=0, x=0, y=0, level=0, positions=None, spacing_factor=25.0):
+        if positions is None:
+            positions = {}
+            
+        positions[node] = (x, y)
+        
+        if max_depth is not None and level >= max_depth:
+            return positions
+        
+        if int(children_left[node]) != int(children_right[node]):  # Not a leaf
+            # Use much wider spacing with very slow reduction to prevent overlap
+            spacing = spacing_factor / (level * 0.2 + 1)  # Much slower spacing reduction
+            
+            if children_left[node] >= 0:
+                left_child = int(children_left[node])
+                get_tree_positions(left_child, x - spacing, y - 3.5, level + 1, positions, spacing_factor)
+            
+            if children_right[node] >= 0:
+                right_child = int(children_right[node])
+                get_tree_positions(right_child, x + spacing, y - 3.5, level + 1, positions, spacing_factor)
+        
+        return positions
+    
+    positions = get_tree_positions()
+    
+    # Calculate probability ranges for color scaling
+    all_probabilities = []
+    for n in range(tree.node_count):
+        if max_depth is not None and positions[n][1] < -max_depth * 3.5:
+            continue
+        
+        if class_names is not None:  # Classification
+            class_probs = value[n][0] / np.sum(value[n][0])
+            max_prob = float(np.max(class_probs))
+            all_probabilities.append(max_prob)
+        else:  # Regression - normalize prediction values
+            predicted_value = float(value[n][0][0])
+            all_probabilities.append(predicted_value)
+    
+    if all_probabilities:
+        min_prob, max_prob = min(all_probabilities), max(all_probabilities)
+    else:
+        min_prob, max_prob = 0.0, 1.0
+    
+    # Create the plot
+    fig = go.Figure()
+    
+    # Add edges with labels
+    for node in range(tree.node_count):
+        if max_depth is not None and positions[node][1] < -max_depth * 3.5:
+            continue
+            
+        if children_left[node] >= 0:  # Has left child
+            left_child = int(children_left[node])
+            if left_child in positions:
+                x0, y0 = positions[node]
+                x1, y1 = positions[left_child]
+                
+                # Add edge line
+                fig.add_trace(go.Scatter(
+                    x=[x0, x1], y=[y0, y1],
+                    mode='lines',
+                    line=dict(color='black', width=2),
+                    hoverinfo='none',
+                    showlegend=False
+                ))
+                
+                # Add "yes" label on left branch
+                mid_x, mid_y = (x0 + x1) / 2, (y0 + y1) / 2
+                fig.add_annotation(
+                    x=mid_x - 0.2, y=mid_y + 0.2,
+                    text="<b>yes</b>",
+                    showarrow=False,
+                    font=dict(size=12, color='black', family='Arial Bold'),
+                    bgcolor='rgba(255,255,255,0.9)',
+                    bordercolor='black',
+                    borderwidth=1,
+                    borderpad=2
+                )
+        
+        if children_right[node] >= 0:  # Has right child
+            right_child = int(children_right[node])
+            if right_child in positions:
+                x0, y0 = positions[node]
+                x1, y1 = positions[right_child]
+                
+                # Add edge line
+                fig.add_trace(go.Scatter(
+                    x=[x0, x1], y=[y0, y1],
+                    mode='lines',
+                    line=dict(color='black', width=2),
+                    hoverinfo='none',
+                    showlegend=False
+                ))
+                
+                # Add "no" label on right branch
+                mid_x, mid_y = (x0 + x1) / 2, (y0 + y1) / 2
+                fig.add_annotation(
+                    x=mid_x + 0.2, y=mid_y + 0.2,
+                    text="<b>no</b>",
+                    showarrow=False,
+                    font=dict(size=12, color='black', family='Arial Bold'),
+                    bgcolor='rgba(255,255,255,0.9)',
+                    bordercolor='black',
+                    borderwidth=1,
+                    borderpad=2
+                )
+    
+    # Create nodes with probability-based coloring
+    for node in range(tree.node_count):
+        if max_depth is not None and positions[node][1] < -max_depth * 3.5:
+            continue
+            
+        x, y = positions[node]
+        
+        # Node information
+        samples = int(n_node_samples[node])
+        proportion = samples / total_samples
+        
+        is_leaf = int(children_left[node]) == int(children_right[node])
+        
+        if is_leaf:  # Leaf node
+            if class_names is not None:  # Classification
+                predicted_class = int(np.argmax(value[node][0]))
+                class_probs = value[node][0] / np.sum(value[node][0])
+                predicted_probability = float(class_probs[predicted_class])
+                
+                # Calculate color intensity based on probability (0.0 to 1.0)
+                if max_prob > min_prob:
+                    color_intensity = (predicted_probability - min_prob) / (max_prob - min_prob)
+                else:
+                    color_intensity = predicted_probability
+                
+                # Create heatmap-style colors: light blue (low) to deep red (high)
+                if color_intensity < 0.2:
+                    node_color = f'rgba(240, 248, 255, 0.95)'  # Very light blue
+                    text_color = 'black'
+                elif color_intensity < 0.4:
+                    node_color = f'rgba(173, 216, 230, 0.95)'  # Light blue
+                    text_color = 'black'
+                elif color_intensity < 0.6:
+                    node_color = f'rgba(255, 140, 105, 0.95)'  # Coral/salmon
+                    text_color = 'black'
+                elif color_intensity < 0.8:
+                    node_color = f'rgba(255, 69, 58, 0.95)'   # Red-orange
+                    text_color = 'white'
+                else:
+                    node_color = f'rgba(220, 20, 20, 0.95)'   # Deep red
+                    text_color = 'white'
+                
+                # Node text: GUARANTEED VISIBLE probability and percentage
+                node_text = f"<b>{predicted_probability:.3f}</b><br><b>{proportion*100:.0f}%</b>"
+                
+                hover_text = (f"<b>LEAF NODE</b><br>"
+                            f"Predicted Class: <b>{class_names[predicted_class]}</b><br>"
+                            f"Probability: <b>{predicted_probability:.3f}</b><br>"
+                            f"Samples: {samples:,}<br>"
+                            f"Percentage: {proportion*100:.1f}%<br>"
+                            f"Confidence Level: {'High' if predicted_probability > 0.8 else 'Medium' if predicted_probability > 0.6 else 'Low'}")
+                            
+            else:  # Regression
+                predicted_value = float(value[node][0][0])
+                
+                # Normalize for color intensity
+                if max_prob > min_prob:
+                    color_intensity = (predicted_value - min_prob) / (max_prob - min_prob)
+                else:
+                    color_intensity = 0.5
+                
+                # Heatmap colors for regression
+                if color_intensity < 0.2:
+                    node_color = f'rgba(240, 248, 255, 0.95)'  # Very light blue
+                    text_color = 'black'
+                elif color_intensity < 0.4:
+                    node_color = f'rgba(173, 216, 230, 0.95)'  # Light blue
+                    text_color = 'black'
+                elif color_intensity < 0.6:
+                    node_color = f'rgba(255, 140, 105, 0.95)'  # Coral
+                    text_color = 'black'
+                elif color_intensity < 0.8:
+                    node_color = f'rgba(255, 69, 58, 0.95)'   # Red-orange
+                    text_color = 'white'
+                else:
+                    node_color = f'rgba(220, 20, 20, 0.95)'   # Deep red
+                    text_color = 'white'
+                
+                node_text = f"<b>{predicted_value:.3f}</b><br><b>{proportion*100:.0f}%</b>"
+                
+                hover_text = (f"<b>LEAF NODE</b><br>"
+                            f"Predicted Value: <b>{predicted_value:.3f}</b><br>"
+                            f"Samples: {samples:,}<br>"
+                            f"Percentage: {proportion*100:.1f}%")
+        
+        else:  # Internal node
+            feature_name = feature_names[int(feature[node])]
+            threshold_val = float(threshold[node])
+            
+            if class_names is not None:  # Classification
+                predicted_class = int(np.argmax(value[node][0]))
+                class_probs = value[node][0] / np.sum(value[node][0])
+                predicted_probability = float(class_probs[predicted_class])
+                
+                # Calculate color intensity
+                if max_prob > min_prob:
+                    color_intensity = (predicted_probability - min_prob) / (max_prob - min_prob)
+                else:
+                    color_intensity = predicted_probability
+                
+                # Lighter heatmap colors for internal nodes
+                if color_intensity < 0.2:
+                    node_color = f'rgba(248, 248, 255, 0.9)'  # Ghost white
+                    text_color = 'black'
+                elif color_intensity < 0.4:
+                    node_color = f'rgba(230, 240, 250, 0.9)'  # Light blue
+                    text_color = 'black'
+                elif color_intensity < 0.6:
+                    node_color = f'rgba(255, 200, 180, 0.9)'  # Light coral
+                    text_color = 'black'
+                elif color_intensity < 0.8:
+                    node_color = f'rgba(255, 160, 140, 0.9)'  # Medium coral
+                    text_color = 'black'
+                else:
+                    node_color = f'rgba(240, 100, 80, 0.9)'   # Deep coral
+                    text_color = 'white'
+                
+                # Node text: probability and percentage
+                node_text = f"<b>{predicted_probability:.3f}</b><br><b>{proportion*100:.0f}%</b>"
+                
+                # Decision rule as separate annotation below the node
+                decision_text = f"<b>{feature_name} < {threshold_val:.2f}</b>"
+                
+                hover_text = (f"<b>DECISION NODE</b><br>"
+                            f"Split Rule: <b>{feature_name} < {threshold_val:.3f}</b><br>"
+                            f"Current Best Probability: <b>{predicted_probability:.3f}</b><br>"
+                            f"Samples: {samples:,}<br>"
+                            f"Percentage: {proportion*100:.1f}%")
+                            
+            else:  # Regression
+                predicted_value = float(value[node][0][0])
+                
+                if max_prob > min_prob:
+                    color_intensity = (predicted_value - min_prob) / (max_prob - min_prob)
+                else:
+                    color_intensity = 0.5
+                
+                # Lighter heatmap colors for internal regression nodes
+                if color_intensity < 0.2:
+                    node_color = f'rgba(248, 248, 255, 0.9)'  # Ghost white
+                    text_color = 'black'
+                elif color_intensity < 0.4:
+                    node_color = f'rgba(230, 240, 250, 0.9)'  # Light blue
+                    text_color = 'black'
+                elif color_intensity < 0.6:
+                    node_color = f'rgba(255, 200, 180, 0.9)'  # Light coral
+                    text_color = 'black'
+                elif color_intensity < 0.8:
+                    node_color = f'rgba(255, 160, 140, 0.9)'  # Medium coral
+                    text_color = 'black'
+                else:
+                    node_color = f'rgba(240, 100, 80, 0.9)'   # Deep coral
+                    text_color = 'white'
+                
+                node_text = f"<b>{predicted_value:.3f}</b><br><b>{proportion*100:.0f}%</b>"
+                
+                decision_text = f"<b>{feature_name} < {threshold_val:.2f}</b>"
+                
+                hover_text = (f"<b>DECISION NODE</b><br>"
+                            f"Split Rule: <b>{feature_name} < {threshold_val:.3f}</b><br>"
+                            f"Current Value: <b>{predicted_value:.3f}</b><br>"
+                            f"Samples: {samples:,}<br>"
+                            f"Percentage: {proportion*100:.1f}%")
+        
+        # Create BIGGER rectangular nodes with better proportions
+        node_width = 1.8   # Even bigger width
+        node_height = 1.2  # Bigger height for better text visibility
+        
+        # Add rectangle with probability-based coloring
+        fig.add_shape(
+            type="rect",
+            x0=x - node_width/2, y0=y - node_height/2,
+            x1=x + node_width/2, y1=y + node_height/2,
+            fillcolor=node_color,
+            line=dict(color='black', width=2)
+        )
+        
+        # Add node text with MAXIMUM visibility
+        fig.add_annotation(
+            x=x, y=y,
+            text=node_text,
+            showarrow=False,
+            font=dict(size=24, color=text_color, family='Arial Black'),  # VERY large, bold font
+            bgcolor='rgba(255,255,255,0.4)' if text_color == 'white' else 'rgba(0,0,0,0.2)',  # More visible background
+            bordercolor=text_color,
+            borderwidth=2
+        )
+        
+        # Add decision rule below internal nodes
+        if not is_leaf:
+            fig.add_annotation(
+                x=x, y=y - 1.0,
+                text=decision_text,
+                showarrow=False,
+                font=dict(size=11, color='black', family='Arial Bold'),
+                bgcolor='rgba(255,255,255,0.95)',
+                bordercolor='black',
+                borderwidth=1,
+                borderpad=3
+            )
+        
+        # Add invisible scatter point for hover with larger area
+        fig.add_trace(go.Scatter(
+            x=[x], y=[y],
+            mode='markers',
+            marker=dict(size=50, color='rgba(0,0,0,0)'),  # Larger hover area
+            hovertext=hover_text,
+            hoverinfo='text',
+            hoverlabel=dict(
+                bgcolor='rgba(255,255,255,0.95)',
+                bordercolor='black',
+                font=dict(size=12, color='black', family='Arial')
+            ),
+            showlegend=False,
+            name=f'Node_{node}'
+        ))
+    
+    # Add color scale legend on the right
+    if class_names is not None:
+        # Classification probability color scale with heatmap colors
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None],
+            mode='markers',
+            marker=dict(
+                size=1,
+                color=[min_prob, max_prob],
+                colorscale=[
+                    [0, 'rgb(240,248,255)'],      # Very light blue
+                    [0.2, 'rgb(173,216,230)'],    # Light blue
+                    [0.4, 'rgb(255,140,105)'],    # Coral
+                    [0.6, 'rgb(255,69,58)'],      # Red-orange
+                    [1, 'rgb(220,20,20)']         # Deep red
+                ],
+                showscale=True,
+                colorbar=dict(
+                    title="<b>Probability Level</b>",
+                    titleside="right",
+                    thickness=35,
+                    len=0.8,
+                    x=1.02,
+                    tickvals=[min_prob, min_prob + 0.2*(max_prob-min_prob), min_prob + 0.4*(max_prob-min_prob), min_prob + 0.6*(max_prob-min_prob), min_prob + 0.8*(max_prob-min_prob), max_prob],
+                    ticktext=[f'{min_prob:.2f}<br><span style="font-size:10px">Very Low</span>', 
+                             f'{min_prob + 0.2*(max_prob-min_prob):.2f}<br><span style="font-size:10px">Low</span>', 
+                             f'{min_prob + 0.4*(max_prob-min_prob):.2f}<br><span style="font-size:10px">Medium</span>',
+                             f'{min_prob + 0.6*(max_prob-min_prob):.2f}<br><span style="font-size:10px">High</span>',
+                             f'{min_prob + 0.8*(max_prob-min_prob):.2f}<br><span style="font-size:10px">Very High</span>',
+                             f'{max_prob:.2f}<br><span style="font-size:10px">Max</span>'],
+                    tickfont=dict(size=11, family='Arial Bold')
+                )
+            ),
+            showlegend=False,
+            name='Probability Scale'
+        ))
+    else:
+        # Regression value color scale with matching heatmap colors
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None],
+            mode='markers',
+            marker=dict(
+                size=1,
+                color=[min_prob, max_prob],
+                colorscale=[
+                    [0, 'rgb(240,248,255)'],      # Very light blue
+                    [0.2, 'rgb(173,216,230)'],    # Light blue
+                    [0.4, 'rgb(255,140,105)'],    # Coral
+                    [0.6, 'rgb(255,69,58)'],      # Red-orange
+                    [1, 'rgb(220,20,20)']         # Deep red
+                ],
+                showscale=True,
+                colorbar=dict(
+                    title="<b>Predicted Value</b>",
+                    titleside="right",
+                    thickness=35,
+                    len=0.8,
+                    x=1.02,
+                    tickfont=dict(size=11, family='Arial Bold')
+                )
+            ),
+            showlegend=False,
+            name='Value Scale'
+        ))
+    
+    # Update layout with MAXIMUM spacing and margins to prevent issues
+    fig.update_layout(
+        title=dict(
+            text="Decision Tree Probability Heatmap<br><sub>Probabilities and percentages displayed - Colors show confidence levels - Hover for details</sub>",
+            font=dict(size=18, color='black'),
+            x=0.5,
+            xanchor='center'
+        ),
+        showlegend=False,
+        hovermode='closest',
+        margin=dict(b=250, l=150, r=250, t=150),  # VERY large margins to prevent cutoff
+        annotations=[
+            dict(
+                text="HEATMAP STYLE GUIDE:<br>" +
+                     "LIGHT BLUE = Low probability - CORAL/ORANGE = Medium probability - DEEP RED = High probability<br>" +
+                     "Numbers show: Top = probability, Bottom = sample percentage<br>" +
+                     "Decision rules shown below internal nodes",
+                showarrow=False,
+                xref="paper", yref="paper",
+                x=0.5, y=-0.15,
+                xanchor='center', yanchor='top',
+                font=dict(color='rgb(60,60,60)', size=12),
+                bgcolor='rgba(248,248,248,0.9)',
+                bordercolor='gray',
+                borderwidth=1,
+                borderpad=8
+            )
+        ],
+        xaxis=dict(
+            showgrid=False, 
+            zeroline=False, 
+            showticklabels=False,
+            fixedrange=False  # Allow horizontal scrolling
+        ),
+        yaxis=dict(
+            showgrid=False, 
+            zeroline=False, 
+            showticklabels=False,
+            fixedrange=True  # Disable vertical zooming/panning
+        ),
+        plot_bgcolor='rgba(250,250,250,1)',
+        paper_bgcolor='white',
+        # Make figure much wider and taller to prevent cutoff
+        width=6000,   # Much wider for better spacing and no overlap
+        height=3500,  # Much taller to prevent bottom cutoff
+        dragmode='pan'  # Enable horizontal scrolling
+    )
+    
+    return fig
+
 
 def create_forest_importance_plot(model, feature_names):
     """
@@ -930,150 +1397,868 @@ def create_forest_importance_plot(model, feature_names):
     
     return fig
 
-def create_pruning_visualization(pruning_info):
-    """Create visualization of the cost complexity pruning path"""
-    import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
+# Enhanced CSS styling for better appearance
+st.markdown("""
+<style>
+.main-header {
+    font-size: 2.5rem !important;
+    font-weight: 700 !important;
+    color: #1f77b4 !important;
+    text-align: center !important;
+    margin-bottom: 2rem !important;
+    padding: 1rem !important;
+    border-bottom: 3px solid #1f77b4 !important;
+}
+
+.subheader {
+    font-size: 1.8rem !important;
+    font-weight: 600 !important;
+    color: #2c3e50 !important;
+    margin-top: 2rem !important;
+    margin-bottom: 1rem !important;
+    padding-bottom: 0.5rem !important;
+    border-bottom: 2px solid #ecf0f1 !important;
+}
+
+.metric-container {
+    background-color: #f8f9fa !important;
+    padding: 1rem !important;
+    border-radius: 0.5rem !important;
+    border: 1px solid #e9ecef !important;
+    margin: 0.5rem 0;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+def calculate_regression_stats(X, y, model, method='OLS', fit_intercept=True):
+        
+        if max_depth is not None and level >= max_depth:
+            return positions
+        
+        if int(children_left[node]) != int(children_right[node]):  # Not a leaf
+            # Use much wider spacing with very slow reduction to prevent overlap
+            spacing = spacing_factor / (level * 0.2 + 1)  # Much slower spacing reduction
+            
+            if children_left[node] >= 0:
+                left_child = int(children_left[node])
+                get_tree_positions(left_child, x - spacing, y - 3.5, level + 1, positions, spacing_factor)
+            
+            if children_right[node] >= 0:
+                right_child = int(children_right[node])
+                get_tree_positions(right_child, x + spacing, y - 3.5, level + 1, positions, spacing_factor)
+        
+        return positions
     
-    if 'manual_alpha' in pruning_info:
-        # For manual alpha, create a simple display
-        fig = go.Figure()
-        fig.add_annotation(
-            x=0.5, y=0.5,
-            xref='paper', yref='paper',
-            text=f"Manual Alpha Used: {pruning_info['manual_alpha']:.6f}",
-            showarrow=False,
-            font=dict(size=16, color='black'),
-            xanchor='center', yanchor='middle'
-        )
-        fig.update_layout(
-            title="Cost Complexity Pruning: Manual Alpha",
-            showlegend=False,
-            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-            height=200
-        )
-        return fig
+    positions = get_tree_positions()
     
-    # For cross-validation results
-    ccp_alphas = pruning_info.get('ccp_alphas', [])
-    cv_scores = pruning_info.get('cv_scores', [])
-    optimal_alpha = pruning_info.get('optimal_alpha', 0)
+    # Calculate probability ranges for color scaling
+    all_probabilities = []
+    for n in range(tree.node_count):
+        if max_depth is not None and positions[n][1] < -max_depth * 2.5:
+            continue
+        
+        if class_names is not None:  # Classification
+            class_probs = value[n][0] / np.sum(value[n][0])
+            max_prob = float(np.max(class_probs))
+            all_probabilities.append(max_prob)
+        else:  # Regression - normalize prediction values
+            predicted_value = float(value[n][0][0])
+            all_probabilities.append(predicted_value)
     
-    if len(ccp_alphas) == 0:
-        # No pruning path available
-        fig = go.Figure()
-        fig.add_annotation(
-            x=0.5, y=0.5,
-            xref='paper', yref='paper',
-            text="No pruning path available (tree may be already optimal)",
-            showarrow=False,
-            font=dict(size=14, color='orange'),
-            xanchor='center', yanchor='middle'
-        )
-        fig.update_layout(
-            title="Cost Complexity Pruning: No Path Available",
-            showlegend=False,
-            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-            height=200
-        )
-        return fig
+    if all_probabilities:
+        min_prob, max_prob = min(all_probabilities), max(all_probabilities)
+    else:
+        min_prob, max_prob = 0.0, 1.0
     
-    # Create the pruning path visualization
+    # Create the plot
     fig = go.Figure()
     
-    # Plot CV scores vs alpha
-    fig.add_trace(go.Scatter(
-        x=ccp_alphas,
-        y=cv_scores,
-        mode='lines+markers',
-        name='Cross-Validation Score',
-        line=dict(color='blue', width=2),
-        marker=dict(size=6, color='blue')
-    ))
+    # Add edges with labels
+    for node in range(tree.node_count):
+        if max_depth is not None and positions[node][1] < -max_depth * 2.5:
+            continue
+            
+        if children_left[node] >= 0:  # Has left child
+            left_child = int(children_left[node])
+            if left_child in positions:
+                x0, y0 = positions[node]
+                x1, y1 = positions[left_child]
+                
+                # Add edge line
+                fig.add_trace(go.Scatter(
+                    x=[x0, x1], y=[y0, y1],
+                    mode='lines',
+                    line=dict(color='black', width=2),
+                    hoverinfo='none',
+                    showlegend=False
+                ))
+                
+                # Add "yes" label on left branch
+                mid_x, mid_y = (x0 + x1) / 2, (y0 + y1) / 2
+                fig.add_annotation(
+                    x=mid_x - 0.2, y=mid_y + 0.2,
+                    text="<b>yes</b>",
+                    showarrow=False,
+                    font=dict(size=12, color='black', family='Arial Bold'),
+                    bgcolor='rgba(255,255,255,0.9)',
+                    bordercolor='black',
+                    borderwidth=1,
+                    borderpad=2
+                )
+        
+        if children_right[node] >= 0:  # Has right child
+            right_child = int(children_right[node])
+            if right_child in positions:
+                x0, y0 = positions[node]
+                x1, y1 = positions[right_child]
+                
+                # Add edge line
+                fig.add_trace(go.Scatter(
+                    x=[x0, x1], y=[y0, y1],
+                    mode='lines',
+                    line=dict(color='black', width=2),
+                    hoverinfo='none',
+                    showlegend=False
+                ))
+                
+                # Add "no" label on right branch
+                mid_x, mid_y = (x0 + x1) / 2, (y0 + y1) / 2
+                fig.add_annotation(
+                    x=mid_x + 0.2, y=mid_y + 0.2,
+                    text="<b>no</b>",
+                    showarrow=False,
+                    font=dict(size=12, color='black', family='Arial Bold'),
+                    bgcolor='rgba(255,255,255,0.9)',
+                    bordercolor='black',
+                    borderwidth=1,
+                    borderpad=2
+                )
     
-    # Highlight optimal alpha
-    optimal_idx = list(ccp_alphas).index(optimal_alpha) if optimal_alpha in ccp_alphas else 0
-    fig.add_trace(go.Scatter(
-        x=[optimal_alpha],
-        y=[cv_scores[optimal_idx]],
-        mode='markers',
-        name='Optimal α',
-        marker=dict(size=12, color='red', symbol='star')
-    ))
+    # Create nodes with probability-based coloring
+    for node in range(tree.node_count):
+        if max_depth is not None and positions[node][1] < -max_depth * 2.5:
+            continue
+            
+        x, y = positions[node]
+        
+        # Node information
+        samples = int(n_node_samples[node])
+        proportion = samples / total_samples
+        
+        is_leaf = int(children_left[node]) == int(children_right[node])
+        
+        if is_leaf:  # Leaf node
+            if class_names is not None:  # Classification
+                predicted_class = int(np.argmax(value[node][0]))
+                class_probs = value[node][0] / np.sum(value[node][0])
+                predicted_probability = float(class_probs[predicted_class])
+                
+                # Calculate color intensity based on probability (0.0 to 1.0)
+                if max_prob > min_prob:
+                    color_intensity = (predicted_probability - min_prob) / (max_prob - min_prob)
+                else:
+                    color_intensity = predicted_probability
+                
+                # Create heatmap-style colors: light blue (low) to deep red/blue (high)
+                # Similar to SimilarWeb intelligence heatmap
+                if color_intensity < 0.2:
+                    # Very light blue/white for very low probabilities
+                    node_color = f'rgba(240, 248, 255, 0.95)'  # Alice blue - very light
+                    text_color = 'black'
+                elif color_intensity < 0.4:
+                    # Light blue for low probabilities
+                    node_color = f'rgba(173, 216, 230, 0.95)'  # Light blue
+                    text_color = 'black'
+                elif color_intensity < 0.6:
+                    # Medium orange-red for medium probabilities  
+                    node_color = f'rgba(255, 140, 105, 0.95)'  # Coral/salmon
+                    text_color = 'black'
+                elif color_intensity < 0.8:
+                    # Deep orange-red for high probabilities
+                    node_color = f'rgba(255, 69, 58, 0.95)'   # Red-orange
+                    text_color = 'white'
+                else:
+                    # Deep red for very high probabilities
+                    node_color = f'rgba(220, 20, 20, 0.95)'   # Deep red
+                    text_color = 'white'
+                
+                # Node text: probability and percentage on the square
+                node_text = f"<b>{predicted_probability:.3f}</b><br><b>{proportion*100:.0f}%</b>"
+                
+                hover_text = (f"<b>LEAF NODE</b><br>"
+                            f"Predicted Class: <b>{class_names[predicted_class]}</b><br>"
+                            f"Probability: <b>{predicted_probability:.3f}</b><br>"
+                            f"Samples: {samples:,}<br>"
+                            f"Percentage: {proportion*100:.1f}%<br>"
+                            f"Confidence Level: {'High' if predicted_probability > 0.8 else 'Medium' if predicted_probability > 0.6 else 'Low'}")
+                            
+            else:  # Regression
+                predicted_value = float(value[node][0][0])
+                
+                # Normalize for color intensity
+                if max_prob > min_prob:
+                    color_intensity = (predicted_value - min_prob) / (max_prob - min_prob)
+                else:
+                    color_intensity = 0.5
+                
+                # Heatmap-style colors for regression too
+                if color_intensity < 0.2:
+                    node_color = f'rgba(240, 248, 255, 0.95)'  # Very light blue
+                    text_color = 'black'
+                elif color_intensity < 0.4:
+                    node_color = f'rgba(173, 216, 230, 0.95)'  # Light blue
+                    text_color = 'black'
+                elif color_intensity < 0.6:
+                    node_color = f'rgba(255, 140, 105, 0.95)'  # Coral
+                    text_color = 'black'
+                elif color_intensity < 0.8:
+                    node_color = f'rgba(255, 69, 58, 0.95)'   # Red-orange
+                    text_color = 'white'
+                else:
+                    node_color = f'rgba(220, 20, 20, 0.95)'   # Deep red
+                    text_color = 'white'
+                
+                node_text = f"<b>{predicted_value:.3f}</b><br><b>{proportion*100:.0f}%</b>"
+                
+                hover_text = (f"<b>LEAF NODE</b><br>"
+                            f"Predicted Value: <b>{predicted_value:.3f}</b><br>"
+                            f"Samples: {samples:,}<br>"
+                            f"Percentage: {proportion*100:.1f}%")
+        
+        else:  # Internal node
+            feature_name = feature_names[int(feature[node])]
+            threshold_val = float(threshold[node])
+            
+            if class_names is not None:  # Classification
+                predicted_class = int(np.argmax(value[node][0]))
+                class_probs = value[node][0] / np.sum(value[node][0])
+                predicted_probability = float(class_probs[predicted_class])
+                
+                # Calculate color intensity
+                if max_prob > min_prob:
+                    color_intensity = (predicted_probability - min_prob) / (max_prob - min_prob)
+                else:
+                    color_intensity = predicted_probability
+                
+                # Lighter heatmap colors for internal nodes with better contrast
+                if color_intensity < 0.2:
+                    node_color = f'rgba(248, 248, 255, 0.9)'  # Ghost white
+                    text_color = 'black'
+                elif color_intensity < 0.4:
+                    node_color = f'rgba(230, 240, 250, 0.9)'  # Light blue
+                    text_color = 'black'
+                elif color_intensity < 0.6:
+                    node_color = f'rgba(255, 200, 180, 0.9)'  # Light coral
+                    text_color = 'black'
+                elif color_intensity < 0.8:
+                    node_color = f'rgba(255, 160, 140, 0.9)'  # Medium coral
+                    text_color = 'black'
+                else:
+                    node_color = f'rgba(240, 100, 80, 0.9)'   # Deep coral
+                    text_color = 'white'
+                
+                # Node text: probability and percentage
+                node_text = f"<b>{predicted_probability:.3f}</b><br><b>{proportion*100:.0f}%</b>"
+                
+                # Decision rule as separate annotation below the node
+                decision_text = f"<b>{feature_name} < {threshold_val:.2f}</b>"
+                
+                hover_text = (f"<b>DECISION NODE</b><br>"
+                            f"Split Rule: <b>{feature_name} < {threshold_val:.3f}</b><br>"
+                            f"Current Best Probability: <b>{predicted_probability:.3f}</b><br>"
+                            f"Samples: {samples:,}<br>"
+                            f"Percentage: {proportion*100:.1f}%")
+                            
+            else:  # Regression
+                predicted_value = float(value[node][0][0])
+                
+                if max_prob > min_prob:
+                    color_intensity = (predicted_value - min_prob) / (max_prob - min_prob)
+                else:
+                    color_intensity = 0.5
+                
+                # Lighter heatmap colors for internal regression nodes with better contrast
+                if color_intensity < 0.2:
+                    node_color = f'rgba(248, 248, 255, 0.9)'  # Ghost white
+                    text_color = 'black'
+                elif color_intensity < 0.4:
+                    node_color = f'rgba(230, 240, 250, 0.9)'  # Light blue
+                    text_color = 'black'
+                elif color_intensity < 0.6:
+                    node_color = f'rgba(255, 200, 180, 0.9)'  # Light coral
+                    text_color = 'black'
+                elif color_intensity < 0.8:
+                    node_color = f'rgba(255, 160, 140, 0.9)'  # Medium coral
+                    text_color = 'black'
+                else:
+                    node_color = f'rgba(240, 100, 80, 0.9)'   # Deep coral
+                    text_color = 'white'
+                
+                node_text = f"<b>{predicted_value:.3f}</b><br><b>{proportion*100:.0f}%</b>"
+                
+                decision_text = f"<b>{feature_name} < {threshold_val:.2f}</b>"
+                
+                hover_text = (f"<b>DECISION NODE</b><br>"
+                            f"Split Rule: <b>{feature_name} < {threshold_val:.3f}</b><br>"
+                            f"Current Value: <b>{predicted_value:.3f}</b><br>"
+                            f"Samples: {samples:,}<br>"
+                            f"Percentage: {proportion*100:.1f}%")
+        
+        # Create BIGGER rectangular nodes with better proportions
+        node_width = 1.8   # Even bigger width
+        node_height = 1.2  # Bigger height for better text visibility
+        
+        # Add rectangle with probability-based coloring
+        fig.add_shape(
+            type="rect",
+            x0=x - node_width/2, y0=y - node_height/2,
+            x1=x + node_width/2, y1=y + node_height/2,
+            fillcolor=node_color,
+            line=dict(color='black', width=2)
+        )
+        
+        # Add node text (probability and percentage) with MAXIMUM visibility
+        fig.add_annotation(
+            x=x, y=y,
+            text=node_text,
+            showarrow=False,
+            font=dict(size=22, color=text_color, family='Arial Black'),  # Even larger, bolder font
+            bgcolor='rgba(255,255,255,0.3)' if text_color == 'white' else 'rgba(0,0,0,0.15)',  # More visible background
+            bordercolor=text_color,
+            borderwidth=1.5
+        )
+        
+        # Add decision rule below internal nodes
+        if not is_leaf:
+            fig.add_annotation(
+                x=x, y=y - 0.8,
+                text=decision_text,
+                showarrow=False,
+                font=dict(size=11, color='black', family='Arial Bold'),
+                bgcolor='rgba(255,255,255,0.95)',
+                bordercolor='black',
+                borderwidth=1,
+                borderpad=3
+            )
+        
+        # Add invisible scatter point for hover with larger area
+        fig.add_trace(go.Scatter(
+            x=[x], y=[y],
+            mode='markers',
+            marker=dict(size=50, color='rgba(0,0,0,0)'),  # Larger hover area
+            hovertext=hover_text,
+            hoverinfo='text',
+            hoverlabel=dict(
+                bgcolor='rgba(255,255,255,0.95)',
+                bordercolor='black',
+                font=dict(size=12, color='black', family='Arial')
+            ),
+            showlegend=False,
+            name=f'Node_{node}'
+        ))
     
-    # Add vertical line at optimal alpha
-    fig.add_vline(
-        x=optimal_alpha,
-        line_dash="dash",
-        line_color="red",
-        annotation_text=f"Optimal α = {optimal_alpha:.6f}"
-    )
+    # Add color scale legend on the right
+    if class_names is not None:
+        # Classification probability color scale with heatmap colors
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None],
+            mode='markers',
+            marker=dict(
+                size=1,
+                color=[min_prob, max_prob],
+                colorscale=[
+                    [0, 'rgb(240,248,255)'],      # Very light blue
+                    [0.2, 'rgb(173,216,230)'],    # Light blue
+                    [0.4, 'rgb(255,140,105)'],    # Coral
+                    [0.6, 'rgb(255,69,58)'],      # Red-orange
+                    [1, 'rgb(220,20,20)']         # Deep red
+                ],
+                showscale=True,
+                colorbar=dict(
+                    title="<b>Probability Level</b>",
+                    titleside="right",
+                    thickness=35,
+                    len=0.8,
+                    x=1.02,
+                    tickvals=[min_prob, min_prob + 0.2*(max_prob-min_prob), min_prob + 0.4*(max_prob-min_prob), min_prob + 0.6*(max_prob-min_prob), min_prob + 0.8*(max_prob-min_prob), max_prob],
+                    ticktext=[f'{min_prob:.2f}<br><span style="font-size:10px">Very Low</span>', 
+                             f'{min_prob + 0.2*(max_prob-min_prob):.2f}<br><span style="font-size:10px">Low</span>', 
+                             f'{min_prob + 0.4*(max_prob-min_prob):.2f}<br><span style="font-size:10px">Medium</span>',
+                             f'{min_prob + 0.6*(max_prob-min_prob):.2f}<br><span style="font-size:10px">High</span>',
+                             f'{min_prob + 0.8*(max_prob-min_prob):.2f}<br><span style="font-size:10px">Very High</span>',
+                             f'{max_prob:.2f}<br><span style="font-size:10px">Max</span>'],
+                    tickfont=dict(size=11, family='Arial Bold')
+                )
+            ),
+            showlegend=False,
+            name='Probability Scale'
+        ))
+    else:
+        # Regression value color scale with matching heatmap colors
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None],
+            mode='markers',
+            marker=dict(
+                size=1,
+                color=[min_prob, max_prob],
+                colorscale=[
+                    [0, 'rgb(240,248,255)'],      # Very light blue
+                    [0.2, 'rgb(173,216,230)'],    # Light blue
+                    [0.4, 'rgb(255,140,105)'],    # Coral
+                    [0.6, 'rgb(255,69,58)'],      # Red-orange
+                    [1, 'rgb(220,20,20)']         # Deep red
+                ],
+                showscale=True,
+                colorbar=dict(
+                    title="<b>Predicted Value</b>",
+                    titleside="right",
+                    thickness=35,
+                    len=0.8,
+                    x=1.02,
+                    tickfont=dict(size=11, family='Arial Bold')
+                )
+            ),
+            showlegend=False,
+            name='Value Scale'
+        ))
     
+    # Update layout for horizontal scrolling and bigger squares
     fig.update_layout(
-        title="Cost Complexity Pruning: Cross-Validation Results",
-        xaxis_title="Cost Complexity Parameter (α)",
-        yaxis_title="Cross-Validation Score",
-        showlegend=True,
-        height=400,
-        hovermode='x unified'
+        title=dict(
+            text="Decision Tree Probability Heatmap<br><sub>Probabilities and percentages displayed - Colors show confidence levels - Hover for details</sub>",
+            font=dict(size=18, color='black'),
+            x=0.5,
+            xanchor='center'
+        ),
+        showlegend=False,
+        hovermode='closest',
+        margin=dict(b=200, l=150, r=250, t=150),  # MUCH larger margins to prevent cutoff
+        annotations=[
+            dict(
+                text="HEATMAP STYLE GUIDE:<br>" +
+                     "LIGHT BLUE = Low probability - CORAL/ORANGE = Medium probability - DEEP RED = High probability<br>" +
+                     "Numbers show: Top = probability, Bottom = sample percentage<br>" +
+                     "Decision rules shown below internal nodes",
+                showarrow=False,
+                xref="paper", yref="paper",
+                x=0.5, y=-0.12,
+                xanchor='center', yanchor='top',
+                font=dict(color='rgb(60,60,60)', size=12),
+                bgcolor='rgba(248,248,248,0.9)',
+                bordercolor='gray',
+                borderwidth=1,
+                borderpad=8
+            )
+        ],
+        xaxis=dict(
+            showgrid=False, 
+            zeroline=False, 
+            showticklabels=False,
+            fixedrange=False  # Allow horizontal scrolling
+        ),
+        yaxis=dict(
+            showgrid=False, 
+            zeroline=False, 
+            showticklabels=False,
+            fixedrange=True  # Disable vertical zooming/panning
+        ),
+        plot_bgcolor='rgba(250,250,250,1)',
+        paper_bgcolor='white',
+        # Make figure much wider and taller to prevent cutoff and accommodate bigger squares
+        width=6000,   # Much wider for better spacing and no overlap
+        height=3000,  # Much taller to prevent bottom cutoff
+        dragmode='pan'  # Enable horizontal scrolling
     )
     
     return fig
 
-def display_pruning_info(estimation_method):
-    """Display pruning information if available"""
-    if hasattr(st.session_state, 'pruning_info'):
-        method_key = estimation_method.lower().replace(' ', '_')
-        if method_key in st.session_state.pruning_info:
-            pruning_info = st.session_state.pruning_info[method_key]
+
+def create_forest_importance_plot(model, feature_names):
+        
+        if int(children_left[node]) != int(children_right[node]):  # Not a leaf
+            # Calculate spacing for children - MUCH wider spacing
+            spacing = spacing_factor / (level * 0.7 + 1)  # Reduce spacing decrease
             
-            st.markdown("---")
-            st.markdown('<h2 class="subheader">🌿 Cost Complexity Pruning Results</h2>', unsafe_allow_html=True)
+            # Left child
+            if children_left[node] >= 0:
+                left_child = int(children_left[node])
+                get_tree_positions(left_child, x - spacing, y - 2, level + 1, positions, spacing_factor)
             
-            # Display key metrics
-            col1, col2, col3 = st.columns(3)
+            # Right child
+            if children_right[node] >= 0:
+                right_child = int(children_right[node])
+                get_tree_positions(right_child, x + spacing, y - 2, level + 1, positions, spacing_factor)
+        
+        return positions
+    
+    positions = get_tree_positions()
+    
+    # Create the plot
+    fig = go.Figure()
+    
+    # Add edges first (so they appear behind nodes)
+    edge_x = []
+    edge_y = []
+    
+    for node in range(tree.node_count):
+        if max_depth is not None and positions[node][1] < -max_depth * 2:
+            continue
             
-            if 'manual_alpha' in pruning_info:
-                with col1:
-                    st.metric("Pruning Method", "Manual Alpha")
-                with col2:
-                    st.metric("Alpha Value", f"{pruning_info['manual_alpha']:.6f}")
-                with col3:
-                    st.metric("Status", "Applied")
+        if children_left[node] >= 0:  # Has left child
+            left_child = int(children_left[node])
+            if left_child in positions:
+                x0, y0 = positions[node]
+                x1, y1 = positions[left_child]
+                edge_x.extend([x0, x1, None])
+                edge_y.extend([y0, y1, None])
+        
+        if children_right[node] >= 0:  # Has right child
+            right_child = int(children_right[node])
+            if right_child in positions:
+                x0, y0 = positions[node]
+                x1, y1 = positions[right_child]
+                edge_x.extend([x0, x1, None])
+                edge_y.extend([y0, y1, None])
+    
+    # Add edges with thick lines
+    fig.add_trace(go.Scatter(
+        x=edge_x, y=edge_y,
+        mode='lines',
+        line=dict(color='rgba(50,50,50,0.6)', width=4),
+        hoverinfo='none',
+        showlegend=False,
+        name='Tree Structure'
+    ))
+    
+    # Calculate value ranges for heatmap coloring
+    all_values = []
+    all_impurities = []
+    all_proportions = []
+    
+    for n in range(tree.node_count):
+        if max_depth is not None and positions[n][1] < -max_depth * 2:
+            continue
+        samples = int(n_node_samples[n])
+        proportion = samples / total_samples
+        all_proportions.append(proportion)
+        all_impurities.append(float(impurity[n]))
+        
+        if class_names is None:  # Regression
+            all_values.append(float(value[n][0][0]))
+    
+    if class_names is None:  # Regression
+        min_val, max_val = min(all_values), max(all_values)
+    min_prop, max_prop = min(all_proportions), max(all_proportions)
+    min_imp, max_imp = min(all_impurities), max(all_impurities)
+    
+    # Create nodes with heatmap coloring and GUARANTEED text visibility
+    for node in range(tree.node_count):
+        if max_depth is not None and positions[node][1] < -max_depth * 2:
+            continue
+            
+        x, y = positions[node]
+        
+        # Node information
+        samples = int(n_node_samples[node])
+        proportion = samples / total_samples
+        impurity_val = float(impurity[node])
+        
+        # Calculate LARGE square size for text visibility
+        base_size = 1.2  # Very large base size
+        square_size = base_size + (proportion * 0.8)  # Even larger for important nodes
+        
+        is_leaf = int(children_left[node]) == int(children_right[node])
+        
+        if is_leaf:  # Leaf node
+            if class_names is not None:  # Classification
+                predicted_class = int(np.argmax(value[node][0]))
+                class_probs = value[node][0] / np.sum(value[node][0])
+                predicted_probability = float(class_probs[predicted_class])
+                
+                # Heatmap color based on probability (high probability = warmer color)
+                color_intensity = predicted_probability
+                # Warm colors for high probability: red to orange to yellow
+                red = int(255)
+                green = int(255 * (1 - color_intensity * 0.3))  # Less green for higher probability
+                blue = int(100 * (1 - color_intensity))  # Much less blue for higher probability
+                bg_color = f'rgba({red}, {green}, {blue}, 0.85)'
+                
+                # GUARANTEED VISIBLE TEXT with thick black outline
+                square_text = f"<b>🎯 LEAF</b><br><b>Prop: {proportion:.2f}</b><br><b>Prob: {predicted_probability:.2f}</b><br><b>Class: {class_names[predicted_class]}</b>"
+                
+                # Comprehensive hover info
+                prob_text = "<br>".join([f"  🔸 {cls}: {prob:.3f}" for cls, prob in zip(class_names, class_probs)])
+                hover_text = (f"<b>🎯 FINAL PREDICTION (LEAF NODE)</b><br>"
+                            f"📊 Sample Proportion: {proportion:.1%} ({samples:,}/{total_samples:,})<br>"
+                            f"🎲 Predicted Class: <b>{class_names[predicted_class]}</b><br>"
+                            f"📈 Confidence: {predicted_probability:.3f}<br>"
+                            f"� Impurity: {impurity_val:.3f}<br>"
+                            f"🔍 All Class Probabilities:<br>{prob_text}")
+                            
+            else:  # Regression
+                predicted_value = float(value[node][0][0])
+                
+                # Normalize for heatmap coloring
+                if max_val > min_val:
+                    color_intensity = (predicted_value - min_val) / (max_val - min_val)
+                else:
+                    color_intensity = 0.5
+                
+                # Cool to warm color scheme for regression values
+                red = int(100 + 155 * color_intensity)
+                green = int(150 + 105 * color_intensity)
+                blue = int(255 - 155 * color_intensity)
+                bg_color = f'rgba({red}, {green}, {blue}, 0.85)'
+                
+                square_text = f"<b>🎯 LEAF</b><br><b>Value: {predicted_value:.2f}</b><br><b>Prop: {proportion:.2f}</b>"
+                
+                hover_text = (f"<b>🎯 FINAL PREDICTION (LEAF NODE)</b><br>"
+                            f"📊 Sample Proportion: {proportion:.1%} ({samples:,}/{total_samples:,})<br>"
+                            f"📈 Predicted Value: <b>{predicted_value:.3f}</b><br>"
+                            f"📉 MSE: {impurity_val:.3f}")
+                            
+        else:  # Internal node (including ROOT)
+            feature_name = feature_names[int(feature[node])]
+            threshold_val = float(threshold[node])
+            
+            # Special formatting for ROOT node
+            if node == 0:
+                node_type = "🌳 ROOT"
             else:
-                optimal_alpha = pruning_info.get('optimal_alpha', 0)
-                optimal_score = pruning_info.get('optimal_score', 0)
-                n_alphas = pruning_info.get('n_alphas_tested', 0)
-                
-                with col1:
-                    st.metric("Optimal Alpha", f"{optimal_alpha:.6f}")
-                with col2:
-                    st.metric("CV Score", f"{optimal_score:.4f}")
-                with col3:
-                    st.metric("Alphas Tested", n_alphas)
+                node_type = "🌿 DECISION"
             
-            # Create and display visualization
-            pruning_fig = create_pruning_visualization(pruning_info)
-            st.plotly_chart(pruning_fig, use_container_width=True)
-            
-            # Explanation
-            with st.expander("📖 Understanding Cost Complexity Pruning"):
-                st.markdown("""
-                **Cost Complexity Pruning** follows Algorithm 8.1 from ISLR:
+            if class_names is not None:  # Classification
+                predicted_class = int(np.argmax(value[node][0]))
+                class_probs = value[node][0] / np.sum(value[node][0])
+                predicted_probability = float(class_probs[predicted_class])
                 
-                1. **Grow Large Tree**: Start with a large tree grown on training data
-                2. **Generate Subtrees**: Apply cost complexity pruning to obtain sequence of subtrees as function of α
-                3. **Cross-Validation**: Use K-fold CV to choose optimal α that minimizes prediction error
-                4. **Final Model**: Return the subtree corresponding to chosen α
+                # Lighter colors for internal nodes with blue tint
+                color_intensity = predicted_probability
+                red = int(200 + 55 * color_intensity)
+                green = int(220 + 35 * color_intensity)
+                blue = int(255)
+                bg_color = f'rgba({red}, {green}, {blue}, 0.8)'
                 
-                **Key Points:**
-                - **Higher α** = More pruning (simpler tree)
-                - **Lower α** = Less pruning (more complex tree)
-                - **Optimal α** balances bias-variance tradeoff
-                - **CV Score** indicates model performance with given α
-                """)
+                square_text = f"<b>{node_type}</b><br><b>{feature_name}</b><br><b>≤ {threshold_val:.2f}</b><br><b>Prop: {proportion:.2f}</b>"
+                
+                prob_text = "<br>".join([f"  🔸 {cls}: {prob:.3f}" for cls, prob in zip(class_names, class_probs)])
+                hover_text = (f"<b>{node_type} NODE</b><br>"
+                            f"🔀 Decision Rule: <b>{feature_name} ≤ {threshold_val:.3f}</b><br>"
+                            f"📊 Sample Proportion: {proportion:.1%} ({samples:,}/{total_samples:,})<br>"
+                            f"🎲 Current Best Class: <b>{class_names[predicted_class]}</b><br>"
+                            f"📈 Current Probability: {predicted_probability:.3f}<br>"
+                            f"� Impurity: {impurity_val:.3f}<br>"
+                            f"📋 Class Distribution:<br>{prob_text}<br>"
+                            f"⬅️ <b>LEFT (TRUE)</b>: {feature_name} ≤ {threshold_val:.3f}<br>"
+                            f"➡️ <b>RIGHT (FALSE)</b>: {feature_name} > {threshold_val:.3f}")
+                            
+            else:  # Regression
+                predicted_value = float(value[node][0][0])
+                
+                if max_val > min_val:
+                    color_intensity = (predicted_value - min_val) / (max_val - min_val)
+                else:
+                    color_intensity = 0.5
+                
+                # Green tint for internal regression nodes
+                red = int(200 + 55 * color_intensity)
+                green = int(255)
+                blue = int(200 + 55 * color_intensity)
+                bg_color = f'rgba({red}, {green}, {blue}, 0.8)'
+                
+                square_text = f"<b>{node_type}</b><br><b>{feature_name}</b><br><b>≤ {threshold_val:.2f}</b><br><b>Prop: {proportion:.2f}</b>"
+                
+                hover_text = (f"<b>{node_type} NODE</b><br>"
+                            f"🔀 Decision Rule: <b>{feature_name} ≤ {threshold_val:.3f}</b><br>"
+                            f"📊 Sample Proportion: {proportion:.1%} ({samples:,}/{total_samples:,})<br>"
+                            f"📊 Current Value: {predicted_value:.3f}<br>"
+                            f"� MSE: {impurity_val:.3f}<br>"
+                            f"⬅️ <b>LEFT (TRUE)</b>: {feature_name} ≤ {threshold_val:.3f}<br>"
+                            f"➡️ <b>RIGHT (FALSE)</b>: {feature_name} > {threshold_val:.3f}")
+        
+        # Add rectangle with heatmap coloring and thick border
+        fig.add_shape(
+            type="rect",
+            x0=x - square_size/2, y0=y - square_size/2,
+            x1=x + square_size/2, y1=y + square_size/2,
+            fillcolor=bg_color,
+            line=dict(color='black', width=5)  # Very thick border for definition
+        )
+        
+        # Add text with MAXIMUM visibility - white text with black shadow
+        fig.add_annotation(
+            x=x, y=y,
+            text=square_text,
+            showarrow=False,
+            font=dict(
+                size=14,  # Large readable font
+                color='black',  # Black text for best contrast
+                family='Arial Black'
+            ),
+            bgcolor='rgba(255,255,255,0.95)',  # Nearly opaque white background
+            bordercolor='black',
+            borderwidth=3,  # Thick border around text
+            borderpad=6    # More padding for better readability
+        )
+        
+        # Add invisible scatter point for hover with larger area
+        fig.add_trace(go.Scatter(
+            x=[x], y=[y],
+            mode='markers',
+            marker=dict(size=40, color='rgba(0,0,0,0)'),  # Large invisible hover area
+            hovertext=hover_text,
+            hoverinfo='text',
+            hoverlabel=dict(
+                bgcolor='rgba(255,255,255,0.98)',
+                bordercolor='black',
+                font=dict(size=12, color='black', family='Arial')
+            ),
+            showlegend=False,
+            name=f'Node_{node}'
+        ))
+    
+    # Create heatmap legend
+    if class_names is not None:
+        # Classification heatmap legend
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None],
+            mode='markers',
+            marker=dict(
+                size=1,
+                color=[0, 1],
+                colorscale=[[0, 'rgb(255,255,100)'], [1, 'rgb(255,100,100)']],
+                showscale=True,
+                colorbar=dict(
+                    title="Prediction<br>Confidence",
+                    titleside="right",
+                    thickness=20,
+                    len=0.5,
+                    x=1.02,
+                    tickvals=[0, 0.5, 1],
+                    ticktext=['Low', 'Medium', 'High']
+                )
+            ),
+            showlegend=False,
+            name='Confidence Scale'
+        ))
+    else:
+        # Regression heatmap legend
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None],
+            mode='markers',
+            marker=dict(
+                size=1,
+                color=[min_val, max_val] if max_val > min_val else [0, 1],
+                colorscale=[[0, 'rgb(155,255,255)'], [1, 'rgb(255,155,155)']],
+                showscale=True,
+                colorbar=dict(
+                    title="Predicted<br>Value",
+                    titleside="right",
+                    thickness=20,
+                    len=0.5,
+                    x=1.02
+                )
+            ),
+            showlegend=False,
+            name='Value Scale'
+        ))
+    
+    # Update layout for maximum clarity
+    fig.update_layout(
+        title=dict(
+            text="🌳 Interactive Decision Tree Heatmap<br><sub>🎯 ROOT clearly visible at top • 🌡️ Colors show prediction confidence/values • 📍 Hover for details</sub>",
+            font=dict(size=18, color='black'),
+            x=0.5,
+            xanchor='center'
+        ),
+        showlegend=False,
+        hovermode='closest',
+        margin=dict(b=80,l=80,r=120,t=140),
+        annotations=[
+            dict(
+                text="� <b>How to Read the Heatmap:</b><br>" +
+                     "🌳 <b>ROOT</b> = starting point at top • 🌿 <b>DECISION</b> = internal split nodes • 🎯 <b>LEAF</b> = final predictions<br>" +
+                     "🌡️ <b>Colors</b> = warmer (red/orange) = higher confidence/values, cooler (blue/green) = lower<br>" +
+                     "📊 <b>Prop</b> = proportion of samples • <b>Prob</b> = prediction probability",
+                showarrow=False,
+                xref="paper", yref="paper",
+                x=0.5, y=-0.15,
+                xanchor='center', yanchor='top',
+                font=dict(color='rgb(60,60,60)', size=12),
+                bgcolor='rgba(248,248,248,0.8)',
+                bordercolor='gray',
+                borderwidth=1,
+                borderpad=10
+            )
+        ],
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        plot_bgcolor='rgba(250,250,250,1)',  # Very light background
+        paper_bgcolor='white',
+        width=2000,  # Much wider for better spacing
+        height=1600   # Taller for better tree visibility
+    )
+    
+    return fig
+
+def create_forest_importance_plot(model, feature_names):
+    """
+    Create a feature importance plot for Random Forest models.
+    """
+    importance = model.feature_importances_
+    feature_importance = pd.DataFrame({
+        'feature': feature_names,
+        'importance': importance
+    }).sort_values('importance', ascending=True)
+    
+    fig = px.bar(
+        feature_importance, 
+        x='importance', 
+        y='feature',
+        orientation='h',
+        title='Feature Importance (Random Forest)',
+        labels={'importance': 'Importance', 'feature': 'Features'}
+    )
+    
+    fig.update_layout(
+        height=max(400, len(feature_names) * 25),
+        margin=dict(l=150)
+    )
+    
+    return fig
+
+# Set page configuration
+st.set_page_config(
+    page_title="Supervised Learning Tool: Regression and Classification",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom CSS for better styling
+st.markdown("""
+<style>
+.main-header {
+    font-size: 2.5rem;
+    color: #1f77b4;
+    text-align: center;
+    margin-bottom: 2rem;
+}
+.subheader {
+    font-size: 1.5rem;
+    color: #ff7f0e;
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+}
+.metric-card {
+    background-color: #f0f2f6;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    margin: 0.5rem 0;
+}
+</style>
+""", unsafe_allow_html=True)
 
 def calculate_regression_stats(X, y, model, method='OLS', fit_intercept=True):
     """Calculate comprehensive regression statistics for different methods"""
@@ -1084,21 +2269,16 @@ def calculate_regression_stats(X, y, model, method='OLS', fit_intercept=True):
     n = len(y)
     k = X.shape[1]  # number of features
     
-    # R-squared - use sklearn's score method for regularized models as it's more accurate
-    if method in ['Lasso', 'Ridge', 'Elastic Net']:
-        r_squared = model.score(X, y)  # sklearn's R² calculation
-    else:
-        # Manual calculation for other methods
-        ss_res = np.sum((y - y_pred) ** 2)
-        ss_tot = np.sum((y - np.mean(y)) ** 2)
-        r_squared = 1 - (ss_res / ss_tot)
+    # R-squared
+    ss_res = np.sum((y - y_pred) ** 2)
+    ss_tot = np.sum((y - np.mean(y)) ** 2)
+    r_squared = 1 - (ss_res / ss_tot)
     
     # Adjusted R-squared (account for constant term)
     k_adj = k + (1 if fit_intercept else 0)  # Add 1 for intercept if included
     adj_r_squared = 1 - (1 - r_squared) * (n - 1) / (n - k_adj)
     
     # Mean Squared Error and Root Mean Squared Error
-    ss_res = np.sum((y - y_pred) ** 2)  # Recalculate for MSE
     mse = ss_res / (n - k_adj) if method == 'OLS' else ss_res / n
     rmse = np.sqrt(mse)
     
@@ -1167,88 +2347,6 @@ def calculate_regression_stats(X, y, model, method='OLS', fit_intercept=True):
         'method': method
     }
 
-def find_optimal_ccp_alpha(X, y, model_class, cv_folds=5, **model_params):
-    """
-    Implement cost complexity pruning algorithm based on Algorithm 8.1
-    
-    This function implements the steps from Algorithm 8.1:
-    1. Grow a large tree on training data
-    2. Apply cost complexity pruning to obtain subtrees
-    3. Use K-fold cross-validation to choose optimal alpha
-    4. Return the optimal alpha value
-    """
-    from sklearn.model_selection import KFold
-    from sklearn.metrics import mean_squared_error
-    
-    # Step 1: Grow a large tree (without depth limit for initial tree)
-    large_tree_params = model_params.copy()
-    large_tree_params['max_depth'] = None  # Remove depth limit for initial large tree
-    large_tree = model_class(**large_tree_params, random_state=42)
-    large_tree.fit(X, y)
-    
-    # Step 2: Get cost complexity pruning path (sequence of alpha values and corresponding subtrees)
-    path = large_tree.cost_complexity_pruning_path(X, y)
-    ccp_alphas = path.ccp_alphas
-    
-    # Remove the last alpha (which gives empty tree)
-    ccp_alphas = ccp_alphas[:-1]
-    
-    if len(ccp_alphas) == 0:
-        return 0.0, {}
-    
-    # Step 3: Use K-fold cross-validation to choose optimal alpha
-    kf = KFold(n_splits=cv_folds, shuffle=True, random_state=42)
-    cv_scores = []
-    
-    for alpha in ccp_alphas:
-        fold_scores = []
-        
-        # Step 3a & 3b: For each fold, train on K-1 folds and evaluate on kth fold
-        for train_idx, val_idx in kf.split(X):
-            X_train_fold, X_val_fold = X.iloc[train_idx], X.iloc[val_idx]
-            y_train_fold, y_val_fold = y.iloc[train_idx], y.iloc[val_idx]
-            
-            # Train model with current alpha
-            model_params_alpha = model_params.copy()
-            model_params_alpha['ccp_alpha'] = alpha
-            fold_model = model_class(**model_params_alpha, random_state=42)
-            fold_model.fit(X_train_fold, y_train_fold)
-            
-            # Evaluate on validation fold
-            y_pred = fold_model.predict(X_val_fold)
-            
-            # Use appropriate metric based on model type
-            if hasattr(fold_model, 'predict_proba'):  # Classification
-                from sklearn.metrics import log_loss
-                try:
-                    y_pred_proba = fold_model.predict_proba(X_val_fold)
-                    score = -log_loss(y_val_fold, y_pred_proba)  # Negative for maximization
-                except:
-                    from sklearn.metrics import accuracy_score
-                    score = accuracy_score(y_val_fold, y_pred)
-            else:  # Regression
-                score = -mean_squared_error(y_val_fold, y_pred)  # Negative MSE for maximization
-            
-            fold_scores.append(score)
-        
-        # Average scores across folds for this alpha
-        cv_scores.append(np.mean(fold_scores))
-    
-    # Step 4: Choose alpha that minimizes average error (maximizes average score)
-    optimal_idx = np.argmax(cv_scores)
-    optimal_alpha = ccp_alphas[optimal_idx]
-    
-    # Return results including pruning information
-    pruning_info = {
-        'ccp_alphas': ccp_alphas,
-        'cv_scores': cv_scores,
-        'optimal_alpha': optimal_alpha,
-        'optimal_score': cv_scores[optimal_idx],
-        'n_alphas_tested': len(ccp_alphas)
-    }
-    
-    return optimal_alpha, pruning_info
-
 def fit_model(X, y, method, alpha=1.0, l1_ratio=0.5, fit_intercept=True, **kwargs):
     """Fit model based on selected method"""
     if method == 'OLS':
@@ -1266,98 +2364,44 @@ def fit_model(X, y, method, alpha=1.0, l1_ratio=0.5, fit_intercept=True, **kwarg
         max_depth = kwargs.get('max_depth', None)
         min_samples_split = kwargs.get('min_samples_split', 2)
         min_samples_leaf = kwargs.get('min_samples_leaf', 1)
-        enable_pruning = kwargs.get('enable_pruning', False)
-        cv_folds = kwargs.get('cv_folds', 5)
-        pruning_method = kwargs.get('pruning_method', 'Automatic (CV)')
-        manual_alpha = kwargs.get('manual_alpha', None)
         
-        # Base model parameters
-        base_params = {
-            'max_depth': max_depth,
-            'min_samples_split': min_samples_split,
-            'min_samples_leaf': min_samples_leaf,
-            'random_state': 42
-        }
-        
-        # Determine model class
         if model_type == 'classification':
-            model_class = DecisionTreeClassifier
+            model = DecisionTreeClassifier(
+                max_depth=max_depth,
+                min_samples_split=min_samples_split,
+                min_samples_leaf=min_samples_leaf,
+                random_state=42
+            )
         else:
-            model_class = DecisionTreeRegressor
-        
-        # Apply pruning if enabled
-        if enable_pruning:
-            if pruning_method == "Manual Alpha" and manual_alpha is not None:
-                # Use manual alpha
-                optimal_alpha = manual_alpha
-                pruning_info = {'manual_alpha': manual_alpha}
-            else:
-                # Use cross-validation to find optimal alpha
-                optimal_alpha, pruning_info = find_optimal_ccp_alpha(
-                    X, y, model_class, cv_folds, **base_params
-                )
-            
-            # Add ccp_alpha to model parameters
-            base_params['ccp_alpha'] = optimal_alpha
-            
-            # Store pruning info for later display
-            if not hasattr(st.session_state, 'pruning_info'):
-                st.session_state.pruning_info = {}
-            st.session_state.pruning_info['decision_tree'] = pruning_info
-        
-        # Create and fit the model
-        model = model_class(**base_params)
-        
+            model = DecisionTreeRegressor(
+                max_depth=max_depth,
+                min_samples_split=min_samples_split,
+                min_samples_leaf=min_samples_leaf,
+                random_state=42
+            )
     elif method == 'Random Forest':
         model_type = kwargs.get('model_type', 'regression')
         n_estimators = kwargs.get('n_estimators', 100)
         max_depth = kwargs.get('max_depth', None)
         min_samples_split = kwargs.get('min_samples_split', 2)
         min_samples_leaf = kwargs.get('min_samples_leaf', 1)
-        enable_pruning = kwargs.get('enable_pruning', False)
-        cv_folds = kwargs.get('cv_folds', 5)
-        pruning_method = kwargs.get('pruning_method', 'Automatic (CV)')
-        manual_alpha = kwargs.get('manual_alpha', None)
         
-        # Base model parameters
-        base_params = {
-            'n_estimators': n_estimators,
-            'max_depth': max_depth,
-            'min_samples_split': min_samples_split,
-            'min_samples_leaf': min_samples_leaf,
-            'random_state': 42
-        }
-        
-        # Determine model class
         if model_type == 'classification':
-            model_class = RandomForestClassifier
+            model = RandomForestClassifier(
+                n_estimators=n_estimators,
+                max_depth=max_depth,
+                min_samples_split=min_samples_split,
+                min_samples_leaf=min_samples_leaf,
+                random_state=42
+            )
         else:
-            model_class = RandomForestRegressor
-        
-        # Apply pruning if enabled
-        if enable_pruning:
-            if pruning_method == "Manual Alpha" and manual_alpha is not None:
-                # Use manual alpha
-                optimal_alpha = manual_alpha
-                pruning_info = {'manual_alpha': manual_alpha}
-            else:
-                # Use cross-validation to find optimal alpha (using a single tree for alpha estimation)
-                single_tree_params = {k: v for k, v in base_params.items() if k != 'n_estimators'}
-                single_tree_class = DecisionTreeClassifier if model_type == 'classification' else DecisionTreeRegressor
-                optimal_alpha, pruning_info = find_optimal_ccp_alpha(
-                    X, y, single_tree_class, cv_folds, **single_tree_params
-                )
-            
-            # Add ccp_alpha to model parameters (applies to all trees in the forest)
-            base_params['ccp_alpha'] = optimal_alpha
-            
-            # Store pruning info for later display
-            if not hasattr(st.session_state, 'pruning_info'):
-                st.session_state.pruning_info = {}
-            st.session_state.pruning_info['random_forest'] = pruning_info
-        
-        # Create and fit the model
-        model = model_class(**base_params)
+            model = RandomForestRegressor(
+                n_estimators=n_estimators,
+                max_depth=max_depth,
+                min_samples_split=min_samples_split,
+                min_samples_leaf=min_samples_leaf,
+                random_state=42
+            )
     else:
         raise ValueError(f"Unknown method: {method}")
     
@@ -1450,30 +2494,14 @@ def main():
     # Initialize usage tracking (must be called early)
     usage_data = track_app_usage()
     
-    # Check for owner access to analytics
-    show_analytics_option = False
-    if "show_analytics" not in st.session_state:
-        st.session_state.show_analytics = False
-    
-    # Secret access to analytics (only for creator)
-    if st.sidebar.checkbox("🔒 Owner Access", value=False, help="For app creator only"):
-        owner_password = st.sidebar.text_input("Enter owner password:", type="password")
-        if owner_password == "econometric_admin_2025":  # Change this password as needed
-            st.session_state.show_analytics = True
-            show_analytics_option = True
-    
-    # Navigation options
-    nav_options = ["📊 Main App"]
-    if show_analytics_option or st.session_state.show_analytics:
-        nav_options.append("📈 Usage Analytics (Owner)")
-    
+    # Check if this is the analytics page (for app owner)
     page = st.sidebar.selectbox(
         "Navigation",
-        nav_options,
-        help="Select Main App for normal use" + (" or Usage Analytics to view app usage statistics" if show_analytics_option else "")
+        ["📊 Main App", "📈 Usage Analytics (Owner)"],
+        help="Select Main App for normal use, or Usage Analytics to view app usage statistics"
     )
     
-    if page == "📈 Usage Analytics (Owner)" and st.session_state.show_analytics:
+    if page == "📈 Usage Analytics (Owner)":
         # Display usage analytics dashboard
         display_usage_analytics()
         return
@@ -2214,36 +3242,14 @@ def main():
                     alpha = 1.0  # Will be overridden by CV
                     l1_ratio = 0.5  # Will be overridden by CV for Elastic Net
                 else:
-                    # Manual parameter setting with flexible input options
-                    st.sidebar.markdown("**Manual Parameter Setting:**")
-                    
-                    # Alpha parameter with both slider and number input
-                    parameter_input_method = st.sidebar.radio(
-                        "Parameter Input Method:",
-                        options=["Slider (0.001-10)", "Number Input (Any Value)"],
-                        index=0,
-                        help="Choose how to set the regularization parameter"
+                    alpha = st.sidebar.slider(
+                        "Regularization Strength (α)",
+                        min_value=0.001,
+                        max_value=10.0,
+                        value=1.0,
+                        step=0.001,
+                        help="Higher values increase regularization"
                     )
-                    
-                    if parameter_input_method == "Slider (0.001-10)":
-                        alpha = st.sidebar.slider(
-                            "Regularization Strength (α)",
-                            min_value=0.001,
-                            max_value=10.0,
-                            value=1.0,
-                            step=0.001,
-                            help="Higher values increase regularization"
-                        )
-                    else:
-                        alpha = st.sidebar.number_input(
-                            "Regularization Strength (α)",
-                            min_value=0.0001,
-                            max_value=10000.0,
-                            value=1.0,
-                            step=0.1,
-                            format="%.4f",
-                            help="Enter any positive value for regularization strength"
-                        )
                     cv_folds = 5  # Default value
                 
                 if estimation_method == "Elastic Net" and not use_nested_cv:
@@ -2303,47 +3309,6 @@ def main():
                     help="Minimum samples required to be at a leaf node"
                 )
                 
-                # Cost Complexity Pruning
-                st.sidebar.markdown("**Pruning Parameters:**")
-                enable_pruning = st.sidebar.checkbox(
-                    "Enable Cost Complexity Pruning",
-                    value=False,
-                    help="Apply cost complexity pruning using cross-validation to find optimal alpha"
-                )
-                
-                if enable_pruning:
-                    cv_folds = st.sidebar.slider(
-                        "Cross-Validation Folds",
-                        min_value=3,
-                        max_value=10,
-                        value=5,
-                        help="Number of folds for cross-validation to select optimal alpha"
-                    )
-                    
-                    pruning_method = st.sidebar.radio(
-                        "Pruning Selection Method:",
-                        options=["Automatic (CV)", "Manual Alpha"],
-                        index=0,
-                        help="Choose automatic selection via cross-validation or manual alpha setting"
-                    )
-                    
-                    if pruning_method == "Manual Alpha":
-                        manual_alpha = st.sidebar.number_input(
-                            "Cost Complexity Alpha",
-                            min_value=0.0,
-                            max_value=1.0,
-                            value=0.01,
-                            step=0.001,
-                            format="%.4f",
-                            help="Manual setting for cost complexity parameter (higher = more pruning)"
-                        )
-                    else:
-                        manual_alpha = None
-                else:
-                    cv_folds = 5
-                    pruning_method = "Automatic (CV)"
-                    manual_alpha = None
-                
                 if estimation_method == "Random Forest":
                     n_estimators = st.sidebar.slider(
                         "Number of Trees",
@@ -2355,31 +3320,11 @@ def main():
                     )
                 else:
                     n_estimators = 100
-                
-                # Probability Display Settings for Binary Classification
-                if is_binary:
-                    st.sidebar.markdown("---")
-                    st.sidebar.markdown("**🎯 Probability Display (Binary Classification):**")
-                    prob_class_choice = st.sidebar.radio(
-                        "Show probability for:",
-                        options=["Class 0 (typically negative/false)", "Class 1 (typically positive/true)"],
-                        index=0,
-                        help="Choose which class probability to display on tree nodes for binary classification"
-                    )
-                    prob_class_index = 0 if "Class 0" in prob_class_choice else 1
-                else:
-                    prob_class_index = 0  # Default for non-binary variables
-                
             else:
                 max_depth = None
                 min_samples_split = 2
                 min_samples_leaf = 1
                 n_estimators = 100
-                prob_class_index = 0  # Default for non-tree methods
-                enable_pruning = False  # Default for non-tree methods
-                cv_folds = 5
-                pruning_method = "Automatic (CV)"
-                manual_alpha = None
             
             # Missing Values Summary for Selected Variables (show in main area after variables are selected)
             if dependent_var and independent_vars:
@@ -2556,8 +3501,7 @@ def main():
                         model = fit_model(X_scaled, y, estimation_method, alpha, l1_ratio, include_constant,
                                         model_type=model_type, max_depth=max_depth, 
                                         min_samples_split=min_samples_split, min_samples_leaf=min_samples_leaf,
-                                        n_estimators=n_estimators, enable_pruning=enable_pruning,
-                                        cv_folds=cv_folds, pruning_method=pruning_method, manual_alpha=manual_alpha)
+                                        n_estimators=n_estimators)
                         # Track model run
                         track_feature_usage("model_runs")
                         
@@ -2572,8 +3516,7 @@ def main():
                         model = fit_model(X, y, estimation_method, alpha, l1_ratio, include_constant,
                                         model_type=model_type, max_depth=max_depth,
                                         min_samples_split=min_samples_split, min_samples_leaf=min_samples_leaf,
-                                        n_estimators=n_estimators, enable_pruning=enable_pruning,
-                                        cv_folds=cv_folds, pruning_method=pruning_method, manual_alpha=manual_alpha)
+                                        n_estimators=n_estimators)
                         # Track model run
                         track_feature_usage("model_runs")
                         # Calculate stats on original data
@@ -2677,81 +3620,139 @@ def main():
                                 model, 
                                 independent_vars, 
                                 class_names=class_names,
-                                max_depth=max_depth_display,
-                                prob_class_index=prob_class_index
+                                max_depth=max_depth_display
                             )
+                            st.info("📊 Tree visualization shows probabilities with blue heatmap colors. Darker blue = higher probability. You can scroll horizontally to see all nodes.")
+                            st.plotly_chart(tree_fig, use_container_width=False)  # Don't use container width to allow scrolling
                             
-                            # Display tree matching expected image format
-                            # Display dynamic info message based on probability selection
-                            if class_names and len(class_names) == 2:
-                                selected_class = class_names[prob_class_index]
-                                st.info(f"🌳 Tree visualization shows probability for **{selected_class}** and sample percentages on each node. Colors indicate probability levels. Hover over nodes for detailed information.")
-                            else:                            st.info("� Tree visualization shows probabilities and percentages clearly displayed on each node. Colors indicate confidence levels.")
-                            
-                            # Show tree directly in interface with improved button configuration
-                            st.success("💡 **Tip:** Click the fullscreen button (⛶) in the top-right corner of the plot for the best viewing experience!")
-                            st.plotly_chart(tree_fig, use_container_width=True, config={
-                                'displayModeBar': True, 
-                                'displaylogo': False,
-                                'modeBarButtonsToRemove': ['lasso2d', 'select2d'],
-                                'toImageButtonOptions': {
-                                    'format': 'png',
-                                    'filename': 'decision_tree',
-                                    'height': 1200,
-                                    'width': 1600,
-                                    'scale': 2
-                                }
-                            })
-                            
-                            # Single download option matching display format
+                            # Download buttons for decision tree
                             st.markdown("### 📥 Download Tree Visualization")
+                            col1, col2, col3 = st.columns([1, 1, 2])
                             
-                            # Configure for high-quality PNG export matching display
-                            export_fig = tree_fig  # Use same figure
-                            try:
-                                png_bytes = export_fig.to_image(format="png", width=1200, height=1000, scale=2)
+                            with col1:
+                                # Create a copy of the figure for PNG export with full view
+                                export_fig = create_interactive_tree_plot(
+                                    model, 
+                                    independent_vars, 
+                                    class_names=class_names,
+                                    max_depth=max_depth_display
+                                )
+                                
+                                # Configure for high-quality PNG export
+                                export_fig.update_layout(
+                                    width=4000,   # Very wide for full tree view
+                                    height=1600,  # Tall enough for full tree
+                                    font=dict(size=14),  # Larger font for export
+                                    margin=dict(l=100, r=300, t=150, b=100),  # Extra margins
+                                )
+                                
+                                # Convert to PNG bytes with maximum quality and size to show full tree
+                                png_bytes = export_fig.to_image(format="png", width=8000, height=3500, scale=3)
                                 
                                 st.download_button(
-                                    label="📸 Download PNG (High Quality)",
+                                    label="📸 Download PNG (Full View)",
                                     data=png_bytes,
-                                    file_name=f"decision_tree_{datetime.now(pytz.timezone('US/Central')).strftime('%Y%m%d_%H%M%S')}.png",
+                                    file_name=f"decision_tree_{estimation_method.lower().replace(' ', '_')}.png",
                                     mime="image/png",
-                                    help="Download high-resolution PNG showing probabilities and percentages clearly"
+                                    help="Download high-resolution PNG showing the complete tree"
                                 )
-                            except Exception as e:
-                                st.warning("⚠️ PNG download requires the kaleido package. Install with: pip install kaleido")
+                            
+                            with col2:
+                                # Create HTML file with full interactive tree
+                                html_str = export_fig.to_html(
+                                    include_plotlyjs='cdn',
+                                    config={
+                                        'displayModeBar': True,
+                                        'displaylogo': False,
+                                        'modeBarButtonsToRemove': ['select2d', 'lasso2d'],
+                                        'toImageButtonOptions': {
+                                            'format': 'png',
+                                            'filename': f'decision_tree_{estimation_method.lower().replace(" ", "_")}',
+                                            'height': 1600,
+                                            'width': 4000,
+                                            'scale': 2
+                                        }
+                                    }
+                                )
                                 
-                            # Alternative: HTML download (always available)
-                            html_str = tree_fig.to_html(include_plotlyjs='cdn')
-                            st.download_button(
-                                label="📁 Download Tree (HTML)",
-                                data=html_str,
-                                file_name=f"decision_tree_{datetime.now(pytz.timezone('US/Central')).strftime('%Y%m%d_%H%M%S')}.html",
-                                mime="text/html",
-                                help="Download interactive tree as HTML file (always available)"
-                            )
+                                st.download_button(
+                                    label="🌐 Download HTML (Interactive)",
+                                    data=html_str.encode('utf-8'),
+                                    file_name=f"decision_tree_{estimation_method.lower().replace(' ', '_')}.html",
+                                    mime="text/html",
+                                    help="Download interactive HTML file that can be opened in any browser"
+                                )
+                            
+                            with col3:
+                                st.info("💡 **Download Tips:**\n- PNG: High-quality image for presentations\n- HTML: Interactive version for exploration\n- Both show the complete tree with all probability values")
+                                export_fig.update_layout(
+                                    width=2000,  # Extra wide for export
+                                    height=1500,  # Extra tall for export
+                                    margin=dict(l=100, r=100, t=150, b=100)  # More margins
+                                )
+                                
+                                # Download as HTML
+                                html_str = export_fig.to_html(include_plotlyjs='cdn')
+                                st.download_button(
+                                    label="📁 Download Tree (HTML)",
+                                    data=html_str,
+                                    file_name=f"decision_tree_{estimation_method.lower().replace(' ', '_')}.html",
+                                    mime="text/html",
+                                    help="Download interactive tree as HTML file"
+                                )
+                            with col2:
+                                # Download as PNG using the same export figure
+                                try:
+                                    img_bytes = export_fig.to_image(format="png", width=2000, height=1500)
+                                    st.download_button(
+                                        label="🖼️ Download Tree (PNG)",
+                                        data=img_bytes,
+                                        file_name=f"decision_tree_{estimation_method.lower().replace(' ', '_')}.png",
+                                        mime="image/png",
+                                        help="Download tree as PNG image"
+                                    )
+                                except Exception as e:
+                                    st.caption("⚠️ PNG download requires kaleido package")
                             
                             # Track visualization creation
-                            track_feature_usage("visualizations_created")
-                            
-                            # Display pruning information if available
-                            display_pruning_info("Decision Tree")
-                            
-                            # Text representation
+                            track_feature_usage("visualizations_created")                            # Text representation
                             with st.expander("📄 Tree Rules (Text Format)"):
                                 tree_rules = export_text(model, feature_names=independent_vars, max_depth=max_depth_display)
                                 st.text(tree_rules)
                         
                         elif estimation_method == "Random Forest":
-                            # For Random Forest, show feature importance and individual trees
-                            st.markdown('<h2 class="subheader">🌲 Random Forest Analysis</h2>', unsafe_allow_html=True)
-                            
-                            # Feature importance plot
-                            st.subheader("Feature Importance")
+                            # For Random Forest, show feature importance plot and individual tree option
+                            st.subheader("Feature Importance Plot")
                             importance_fig = create_forest_importance_plot(model, independent_vars)
                             st.plotly_chart(importance_fig, use_container_width=True)
                             
-                            # Individual tree visualization
+                            # Download button for feature importance plot
+                            col1, col2, col3 = st.columns([1, 1, 2])
+                            with col1:
+                                # Download as HTML
+                                html_str = importance_fig.to_html(include_plotlyjs='cdn')
+                                st.download_button(
+                                    label="📁 Download Importance (HTML)",
+                                    data=html_str,
+                                    file_name="random_forest_feature_importance.html",
+                                    mime="text/html",
+                                    help="Download feature importance plot as HTML file"
+                                )
+                            with col2:
+                                # Download as PNG
+                                try:
+                                    img_bytes = importance_fig.to_image(format="png", width=800, height=600)
+                                    st.download_button(
+                                        label="🖼️ Download Importance (PNG)",
+                                        data=img_bytes,
+                                        file_name="random_forest_feature_importance.png",
+                                        mime="image/png",
+                                        help="Download feature importance plot as PNG image"
+                                    )
+                                except Exception as e:
+                                    st.caption("⚠️ PNG download requires kaleido package")
+                            
+                            # Option to view individual trees
                             st.subheader("Individual Tree Visualization")
                             tree_index = st.slider("Select tree to visualize", 0, len(model.estimators_)-1, 0)
                             max_depth_display = st.slider("Maximum depth to display", 1, 10, min(5, model.estimators_[tree_index].get_depth()))
@@ -2766,22 +3767,9 @@ def main():
                                 model.estimators_[tree_index], 
                                 independent_vars, 
                                 class_names=class_names,
-                                max_depth=max_depth_display,
-                                prob_class_index=prob_class_index
+                                max_depth=max_depth_display
                             )
-                            st.success("💡 **Tip:** Click the fullscreen button (⛶) in the top-right corner of the plot for the best viewing experience!")
-                            st.plotly_chart(individual_tree_fig, use_container_width=True, config={
-                                'displayModeBar': True, 
-                                'displaylogo': False,
-                                'modeBarButtonsToRemove': ['lasso2d', 'select2d'],
-                                'toImageButtonOptions': {
-                                    'format': 'png',
-                                    'filename': 'random_forest_tree',
-                                    'height': 1200,
-                                    'width': 1600,
-                                    'scale': 2
-                                }
-                            })
+                            st.plotly_chart(individual_tree_fig, use_container_width=False)  # Don't use container width to allow scrolling
                             
                             # Download button for random forest individual tree
                             col1, col2, col3 = st.columns([1, 1, 2])
@@ -2791,8 +3779,7 @@ def main():
                                     model.estimators_[tree_index], 
                                     independent_vars, 
                                     class_names=class_names,
-                                    max_depth=max_depth_display,
-                                    prob_class_index=prob_class_index
+                                    max_depth=max_depth_display
                                 )
                                 export_individual_fig.update_layout(
                                     width=2000,  # Extra wide for export
@@ -2827,9 +3814,6 @@ def main():
                             with st.expander(f"📄 Tree {tree_index} Rules (Text Format)"):
                                 tree_rules = export_text(model.estimators_[tree_index], feature_names=independent_vars, max_depth=max_depth_display)
                                 st.text(tree_rules)
-                            
-                            # Display pruning information if available
-                            display_pruning_info("Random Forest")
                     
                     else:
                         # Linear models - show coefficients table
@@ -3153,56 +4137,55 @@ def main():
         # Instructions when no file is uploaded
         st.info("👆 Please upload a CSV file using the sidebar to get started.")
     
-    # Display usage statistics only for the owner
-    if st.session_state.get('show_analytics', False):
-        st.markdown("---")
-        st.markdown("### App Usage Statistics")
-        
-        # Initialize session state for model run counter if it doesn't exist
-        if 'models_run_count' not in st.session_state:
-            st.session_state.models_run_count = 0
-        
-        # Get persistent usage statistics from file
-        usage_file = "app_usage_stats.json"
+    # Display usage statistics at the bottom of the front page
+    st.markdown("---")
+    st.markdown("### App Usage Statistics")
+    
+    # Initialize session state for model run counter if it doesn't exist
+    if 'models_run_count' not in st.session_state:
+        st.session_state.models_run_count = 0
+    
+    # Get persistent usage statistics from file
+    usage_file = "app_usage_stats.json"
+    total_models_run = 0
+    total_sessions = 0
+    
+    try:
+        if os.path.exists(usage_file):
+            with open(usage_file, "r") as f:
+                usage_data = json.load(f)
+                total_models_run = usage_data.get("total_models_run", 0)
+                total_sessions = usage_data.get("total_sessions", 0)
+    except (json.JSONDecodeError, FileNotFoundError):
         total_models_run = 0
         total_sessions = 0
-        
-        try:
-            if os.path.exists(usage_file):
-                with open(usage_file, "r") as f:
-                    usage_data = json.load(f)
-                    total_models_run = usage_data.get("total_models_run", 0)
-                    total_sessions = usage_data.get("total_sessions", 0)
-        except (json.JSONDecodeError, FileNotFoundError):
-            total_models_run = 0
-            total_sessions = 0
-        
-        # Create columns for statistics display
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric(
-                label="Total Models Run", 
-                value=f"{total_models_run:,}",
-                help="Total number of machine learning models executed since app launch"
-            )
-        
-        with col2:
-            st.metric(
-                label="Total Sessions", 
-                value=f"{total_sessions:,}",
-                help="Total number of user sessions recorded"
-            )
-        
-        with col3:
-            st.metric(
-                label="This Session", 
-                value=f"{st.session_state.models_run_count}",
-                help="Number of models you've run in this session"
-            )
-        
-        # Show current session info
-        st.caption(f"Last updated: {datetime.now(pytz.timezone('US/Central')).strftime('%Y-%m-%d %H:%M:%S CST')} | Session ID: {id(st.session_state)}")
+    
+    # Create columns for statistics display
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric(
+            label="Total Models Run", 
+            value=f"{total_models_run:,}",
+            help="Total number of machine learning models executed since app launch"
+        )
+    
+    with col2:
+        st.metric(
+            label="Total Sessions", 
+            value=f"{total_sessions:,}",
+            help="Total number of user sessions recorded"
+        )
+    
+    with col3:
+        st.metric(
+            label="This Session", 
+            value=f"{st.session_state.models_run_count}",
+            help="Number of models you've run in this session"
+        )
+    
+    # Show current session info
+    st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Session ID: {id(st.session_state)}")
     
     if uploaded_file is None:
         st.markdown("""
