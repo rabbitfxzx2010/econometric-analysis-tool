@@ -476,6 +476,27 @@ def create_interactive_tree_plot(model, feature_names, class_names=None, max_dep
     """
     tree = model.tree_
     
+    # Add validation for heavily pruned trees
+    if tree.node_count <= 0:
+        # Return empty figure for empty trees
+        fig = go.Figure()
+        fig.add_annotation(
+            x=0.5, y=0.5,
+            xref='paper', yref='paper',
+            text="Tree is empty (heavily pruned)",
+            showarrow=False,
+            font=dict(size=14, color='orange'),
+            xanchor='center', yanchor='middle'
+        )
+        fig.update_layout(
+            title="Empty Decision Tree",
+            showlegend=False,
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            height=300
+        )
+        return fig
+    
     # Validate prob_class_index for binary classification
     if class_names is not None and len(class_names) == 2:
         if prob_class_index not in [0, 1]:
@@ -638,9 +659,15 @@ def create_interactive_tree_plot(model, feature_names, class_names=None, max_dep
         if node_id >= tree.node_count:
             continue
         if tree.children_left[node_id] != tree.children_right[node_id]:
-            feature_name = feature_names[tree.feature[node_id]]
-            if feature_name not in used_features:
-                used_features.append(feature_name)
+            # Validate feature index before accessing feature_names
+            feature_idx = tree.feature[node_id]
+            if 0 <= feature_idx < len(feature_names):
+                feature_name = feature_names[feature_idx]
+                if feature_name not in used_features:
+                    used_features.append(feature_name)
+            else:
+                # Skip invalid feature indices (can happen with heavy pruning)
+                continue
     
     # Create abbreviations with numbering for duplicates
     for feature_name in used_features:
@@ -783,15 +810,18 @@ def create_interactive_tree_plot(model, feature_names, class_names=None, max_dep
         
         # Add decision rule on the LEFT edge with variable ABOVE and value BELOW
         if tree.children_left[node_id] != tree.children_right[node_id]:
-            feature_name = feature_names[tree.feature[node_id]]
-            threshold = tree.threshold[node_id]
-            
-            # Use the abbreviation from our mapping
-            abbrev = feature_mapping.get(feature_name, feature_name[:3].lower())
-            
-            # Simplified edge labeling: variable name on LEFT, threshold on RIGHT
-            left_child = tree.children_left[node_id]
-            right_child = tree.children_right[node_id]
+            # Validate feature index before accessing feature_names
+            feature_idx = tree.feature[node_id]
+            if 0 <= feature_idx < len(feature_names):
+                feature_name = feature_names[feature_idx]
+                threshold = tree.threshold[node_id]
+                
+                # Use the abbreviation from our mapping
+                abbrev = feature_mapping.get(feature_name, feature_name[:3].lower())
+                
+                # Simplified edge labeling: variable name on LEFT, threshold on RIGHT
+                left_child = tree.children_left[node_id]
+                right_child = tree.children_right[node_id]
             
             # LEFT edge: show variable name (green = below threshold)
             if left_child >= 0 and left_child in positions:
@@ -935,25 +965,67 @@ def create_pruning_visualization(pruning_info):
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
     
-    if 'manual_alpha' in pruning_info:
-        # For manual alpha, create a simple display
+    # Validate input
+    if not isinstance(pruning_info, dict):
+        # Return a simple error figure
         fig = go.Figure()
         fig.add_annotation(
             x=0.5, y=0.5,
             xref='paper', yref='paper',
-            text=f"Manual Alpha Used: {pruning_info['manual_alpha']:.6f}",
+            text="Error: Invalid pruning information",
             showarrow=False,
-            font=dict(size=16, color='black'),
+            font=dict(size=14, color='red'),
             xanchor='center', yanchor='middle'
         )
         fig.update_layout(
-            title="Cost Complexity Pruning: Manual Alpha",
+            title="Pruning Visualization Error",
             showlegend=False,
             xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
             yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
             height=200
         )
         return fig
+    
+    if 'manual_alpha' in pruning_info:
+        # For manual alpha, create a simple display
+        try:
+            manual_alpha_value = pruning_info['manual_alpha']
+            fig = go.Figure()
+            fig.add_annotation(
+                x=0.5, y=0.5,
+                xref='paper', yref='paper',
+                text=f"Manual Alpha Used: {manual_alpha_value:.6f}",
+                showarrow=False,
+                font=dict(size=16, color='black'),
+                xanchor='center', yanchor='middle'
+            )
+            fig.update_layout(
+                title="Cost Complexity Pruning: Manual Alpha",
+                showlegend=False,
+                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                height=200
+            )
+            return fig
+        except Exception as e:
+            # Return error figure if manual alpha processing fails
+            fig = go.Figure()
+            fig.add_annotation(
+                x=0.5, y=0.5,
+                xref='paper', yref='paper',
+                text=f"Error processing manual alpha: {str(e)}",
+                showarrow=False,
+                font=dict(size=12, color='red'),
+                xanchor='center', yanchor='middle'
+            )
+            fig.update_layout(
+                title="Manual Alpha Error",
+                showlegend=False,
+                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                height=200
+            )
+            return fig
     
     # For cross-validation results
     ccp_alphas = pruning_info.get('ccp_alphas', [])
@@ -1055,8 +1127,19 @@ def display_pruning_info(estimation_method):
                     st.metric("Alphas Tested", n_alphas)
             
             # Create and display visualization
-            pruning_fig = create_pruning_visualization(pruning_info)
-            st.plotly_chart(pruning_fig, use_container_width=True)
+            try:
+                pruning_fig = create_pruning_visualization(pruning_info)
+                if pruning_fig is not None:
+                    st.plotly_chart(pruning_fig, use_container_width=True)
+                else:
+                    st.error("Error: Could not create pruning visualization")
+            except Exception as e:
+                st.error(f"Error creating pruning visualization: {str(e)}")
+                # Create a simple fallback display
+                if 'manual_alpha' in pruning_info:
+                    st.info(f"Manual Alpha Used: {pruning_info['manual_alpha']:.6f}")
+                else:
+                    st.info("Pruning information available but visualization failed")
             
             # Explanation
             with st.expander("📖 Understanding Cost Complexity Pruning"):
@@ -2322,14 +2405,15 @@ def main():
                     
                     if pruning_method == "Manual Alpha":
                         st.sidebar.markdown("**Cost Complexity Alpha (α)**")
-                        st.sidebar.markdown("*Valid range: 0.0 to 1.0 (higher values = more pruning)*")
+                        st.sidebar.markdown("*Valid range: 0.0 to 0.1 (higher values = more pruning)*")
+                        st.sidebar.markdown("*⚠️ Values > 0.05 may result in very small trees*")
                         manual_alpha = st.sidebar.number_input(
                             "Enter alpha value:",
                             min_value=0.0,
-                            max_value=1.0,
+                            max_value=0.1,
                             value=0.01,
-                            format="%.6f",
-                            help="Typical values: 0.001-0.1. Higher values create smaller, more pruned trees."
+                            format="%.4f",
+                            help="Recommended: 0.001-0.05. Higher values create smaller trees. Values > 0.05 may over-prune."
                         )
                     else:
                         manual_alpha = None
@@ -2676,7 +2760,8 @@ def main():
                             if class_names and len(class_names) == 2:
                                 selected_class = class_names[prob_class_index]
                                 st.info(f"🌳 Tree visualization shows probability for **{selected_class}** and sample percentages on each node. Colors indicate probability levels. Hover over nodes for detailed information.")
-                            else:                            st.info("� Tree visualization shows probabilities and percentages clearly displayed on each node. Colors indicate confidence levels.")
+                            else:
+                                st.info("🌳 Tree visualization shows probabilities and percentages clearly displayed on each node. Colors indicate confidence levels.")
                             
                             # Show tree directly in interface with improved button configuration
                             st.success("💡 **Tip:** Click the fullscreen button (⛶) in the top-right corner of the plot for the best viewing experience!")
