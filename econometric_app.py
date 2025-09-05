@@ -954,6 +954,134 @@ def create_interactive_tree_plot(model, feature_names, class_names=None, max_dep
     # Always return the figure (previously indented inside the if-block)
     return fig
 
+def create_confusion_matrix_plot(y_true, y_pred, class_names=None):
+    """
+    Create an interactive confusion matrix visualization using Plotly
+    """
+    from sklearn.metrics import confusion_matrix
+    
+    cm = confusion_matrix(y_true, y_pred)
+    
+    if class_names is None:
+        class_names = [f"Class {i}" for i in range(len(cm))]
+    
+    # Create heatmap
+    fig = go.Figure(data=go.Heatmap(
+        z=cm,
+        x=class_names,
+        y=class_names,
+        colorscale='Blues',
+        text=cm,
+        texttemplate="%{text}",
+        textfont={"size": 16},
+        showscale=True
+    ))
+    
+    fig.update_layout(
+        title="Confusion Matrix",
+        xaxis_title="Predicted Class",
+        yaxis_title="Actual Class",
+        width=500,
+        height=400
+    )
+    
+    return fig
+
+def create_coefficients_plot(model, feature_names):
+    """
+    Create a visualization of logistic regression coefficients
+    """
+    if hasattr(model, 'coef_') and hasattr(model, 'intercept_'):
+        coeffs = model.coef_[0] if model.coef_.ndim > 1 else model.coef_
+        intercept = model.intercept_[0] if isinstance(model.intercept_, np.ndarray) else model.intercept_
+        
+        # Create coefficient dataframe
+        coef_df = pd.DataFrame({
+            'Feature': feature_names + ['Intercept'],
+            'Coefficient': np.append(coeffs, intercept),
+            'Abs_Coefficient': np.append(np.abs(coeffs), np.abs(intercept))
+        }).sort_values('Abs_Coefficient', ascending=True)
+        
+        # Create horizontal bar plot
+        colors = ['red' if x < 0 else 'blue' for x in coef_df['Coefficient']]
+        
+        fig = go.Figure(data=go.Bar(
+            y=coef_df['Feature'],
+            x=coef_df['Coefficient'],
+            orientation='h',
+            marker_color=colors,
+            text=[f"{x:.3f}" for x in coef_df['Coefficient']],
+            textposition='outside'
+        ))
+        
+        fig.update_layout(
+            title="Logistic Regression Coefficients",
+            xaxis_title="Coefficient Value",
+            yaxis_title="Features",
+            height=max(400, len(feature_names) * 30 + 100),
+            margin=dict(l=150, r=50, t=50, b=50)
+        )
+        
+        return fig
+    return None
+
+def create_actual_vs_predicted_plot(y_true, y_pred, y_pred_proba=None):
+    """
+    Create actual vs predicted visualization for classification
+    """
+    fig = go.Figure()
+    
+    # Scatter plot of actual vs predicted
+    fig.add_trace(go.Scatter(
+        x=list(range(len(y_true))),
+        y=y_true,
+        mode='markers',
+        name='Actual',
+        marker=dict(color='blue', size=8, opacity=0.6),
+        hovertemplate='Index: %{x}<br>Actual: %{y}<extra></extra>'
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=list(range(len(y_pred))),
+        y=y_pred,
+        mode='markers',
+        name='Predicted',
+        marker=dict(color='red', size=8, opacity=0.6, symbol='x'),
+        hovertemplate='Index: %{x}<br>Predicted: %{y}<extra></extra>'
+    ))
+    
+    # Add probability visualization if available
+    if y_pred_proba is not None:
+        fig.add_trace(go.Scatter(
+            x=list(range(len(y_pred_proba))),
+            y=y_pred_proba,
+            mode='markers',
+            name='Probability',
+            marker=dict(color='green', size=6, opacity=0.4),
+            yaxis='y2',
+            hovertemplate='Index: %{x}<br>Probability: %{y:.3f}<extra></extra>'
+        ))
+        
+        # Add secondary y-axis for probabilities
+        fig.update_layout(
+            yaxis2=dict(
+                title="Predicted Probability",
+                overlaying='y',
+                side='right',
+                range=[0, 1]
+            )
+        )
+    
+    fig.update_layout(
+        title="Actual vs Predicted Classes",
+        xaxis_title="Sample Index",
+        yaxis_title="Class (0/1)",
+        hovermode='closest',
+        height=400
+    )
+    
+    return fig
+
 def create_forest_importance_plot(model, feature_names):
     """
     Create a feature importance plot for Random Forest models.
@@ -1365,7 +1493,9 @@ def fit_model(X, y, method, alpha=1.0, l1_ratio=0.5, fit_intercept=True, **kwarg
     elif method == 'Elastic Net':
         model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, fit_intercept=fit_intercept, random_state=42)
     elif method == 'Logistic Regression':
-        model = LogisticRegression(fit_intercept=fit_intercept, random_state=42, max_iter=1000)
+        # Get class balancing option from kwargs
+        class_weight = kwargs.get('class_weight', None)
+        model = LogisticRegression(fit_intercept=fit_intercept, random_state=42, max_iter=1000, class_weight=class_weight)
     elif method == 'Decision Tree':
         model_type = kwargs.get('model_type', 'regression')
         max_depth = kwargs.get('max_depth', None)
@@ -2365,6 +2495,51 @@ def main():
                 alpha = 1.0
                 l1_ratio = 0.5
             
+            # Logistic Regression specific parameters
+            if estimation_method == "Logistic Regression":
+                st.sidebar.markdown("**Classification Parameters:**")
+                
+                # Feature scaling option
+                use_scaling = st.sidebar.checkbox(
+                    "🔧 Standardize Features",
+                    value=False,
+                    help="Standardize features (recommended for logistic regression)"
+                )
+                
+                # Class balancing options
+                class_weight_option = st.sidebar.selectbox(
+                    "Class Weight Strategy:",
+                    options=["None", "Balanced", "Custom"],
+                    index=0,
+                    help="Handle class imbalance. 'Balanced' automatically adjusts weights inversely proportional to class frequencies."
+                )
+                
+                if class_weight_option == "Balanced":
+                    class_weight = "balanced"
+                elif class_weight_option == "Custom" and is_binary:
+                    col1, col2 = st.sidebar.columns(2)
+                    with col1:
+                        class_0_weight = st.number_input("Class 0 Weight", min_value=0.1, value=1.0, step=0.1)
+                    with col2:
+                        class_1_weight = st.number_input("Class 1 Weight", min_value=0.1, value=1.0, step=0.1)
+                    class_weight = {0: class_0_weight, 1: class_1_weight}
+                else:
+                    class_weight = None
+                    
+                # Stratified sampling for train-test split
+                if is_binary or is_categorical:
+                    use_stratify = st.sidebar.checkbox(
+                        "📊 Use Stratified Sampling",
+                        value=False,
+                        help="Maintain class proportions in train-test splits"
+                    )
+                else:
+                    use_stratify = False
+            else:
+                use_scaling = False
+                class_weight = None
+                use_stratify = False
+            
             # Tree-based method parameters
             if estimation_method in ["Decision Tree", "Random Forest"]:
                 st.sidebar.markdown("**Tree Parameters:**")
@@ -2783,6 +2958,50 @@ def main():
                         
                         if stats_dict['roc_auc'] is not None:
                             st.metric("ROC AUC", f"{float(stats_dict['roc_auc']):.4f}")
+                        
+                        # Classification-specific visualizations
+                        st.markdown('<h2 class="subheader">📊 Classification Visualizations</h2>', unsafe_allow_html=True)
+                        
+                        # Create tabs for classification plots
+                        class_tab1, class_tab2, class_tab3 = st.tabs(["Confusion Matrix", "Model Coefficients", "Actual vs Predicted"])
+                        
+                        with class_tab1:
+                            # Confusion Matrix
+                            y_pred = model.predict(X_for_plotting)
+                            class_names = [str(c) for c in model.classes_] if hasattr(model, 'classes_') else None
+                            confusion_fig = create_confusion_matrix_plot(y, y_pred, class_names)
+                            st.plotly_chart(confusion_fig, use_container_width=True)
+                            track_feature_usage("visualizations_created")
+                            st.caption("Confusion matrix shows the number of correct and incorrect predictions for each class.")
+                        
+                        with class_tab2:
+                            # Coefficients plot (only for logistic regression)
+                            if estimation_method == "Logistic Regression":
+                                coef_fig = create_coefficients_plot(model, independent_vars)
+                                if coef_fig:
+                                    st.plotly_chart(coef_fig, use_container_width=True)
+                                    st.caption("Coefficient values show the impact of each feature. Positive values increase the probability of the positive class.")
+                                else:
+                                    st.info("Coefficient visualization not available for this model type.")
+                            else:
+                                st.info("Coefficient visualization is only available for Logistic Regression models.")
+                        
+                        with class_tab3:
+                            # Actual vs Predicted with probabilities
+                            y_pred_proba = None
+                            if hasattr(model, 'predict_proba'):
+                                y_pred_proba_all = model.predict_proba(X_for_plotting)
+                                # For binary classification, use probability of positive class
+                                if y_pred_proba_all.shape[1] == 2:
+                                    y_pred_proba = y_pred_proba_all[:, 1]
+                                else:
+                                    # For multiclass, use max probability
+                                    y_pred_proba = np.max(y_pred_proba_all, axis=1)
+                            
+                            actual_pred_fig = create_actual_vs_predicted_plot(y, y_pred, y_pred_proba)
+                            st.plotly_chart(actual_pred_fig, use_container_width=True)
+                            st.caption("Comparison of actual vs predicted classes. Green dots show prediction probabilities when available.")
+                    
                     else:
                         col1, col2, col3, col4 = st.columns(4)
                         
