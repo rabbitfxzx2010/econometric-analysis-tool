@@ -1714,7 +1714,7 @@ def main():
     st.markdown('<h1 class="main-header">📊 Supervised Learning Tool: Regression and Classification</h1>', unsafe_allow_html=True)
     
     # About section first
-    st.markdown("**About:** This webapp is created by Ren Zhang. Please leave your feedback below:")
+    st.markdown("**About:** This webapp is created by Ren Zhang. Visit my [personal webpage](https://renzhang.weebly.com/) for more information. Please leave your feedback below:")
     
     # Feedback system with Google Sheets integration
     with st.expander("💬 Leave Feedback", expanded=False):
@@ -2494,6 +2494,7 @@ def main():
             else:
                 alpha = 1.0
                 l1_ratio = 0.5
+                use_nested_cv = False  # Default for non-regularized methods
             
             # Logistic Regression specific parameters
             if estimation_method == "Logistic Regression":
@@ -2875,8 +2876,8 @@ def main():
                         st.success(f"✅ **Optimal parameters found**: {cv_results['best_params']}")
                         st.info(f"📊 **Cross-validation MSE**: {cv_results['best_score']:.6f}")
                     
-                    # For regularized methods, standardize features
-                    if estimation_method in ["Lasso", "Ridge", "Elastic Net"]:
+                    # For regularized methods or when use_scaling is enabled, standardize features
+                    if estimation_method in ["Lasso", "Ridge", "Elastic Net"] or (estimation_method == "Logistic Regression" and use_scaling):
                         scaler = StandardScaler()
                         X_scaled = pd.DataFrame(
                             scaler.fit_transform(X), 
@@ -2888,7 +2889,8 @@ def main():
                                         model_type=model_type, max_depth=max_depth, 
                                         min_samples_split=min_samples_split, min_samples_leaf=min_samples_leaf,
                                         n_estimators=n_estimators, enable_pruning=enable_pruning,
-                                        cv_folds=cv_folds, pruning_method=pruning_method, manual_alpha=manual_alpha)
+                                        cv_folds=cv_folds, pruning_method=pruning_method, manual_alpha=manual_alpha,
+                                        class_weight=class_weight)
                         
                         # Calculate stats on scaled data
                         if model_type == 'classification':
@@ -2902,7 +2904,8 @@ def main():
                                         model_type=model_type, max_depth=max_depth,
                                         min_samples_split=min_samples_split, min_samples_leaf=min_samples_leaf,
                                         n_estimators=n_estimators, enable_pruning=enable_pruning,
-                                        cv_folds=cv_folds, pruning_method=pruning_method, manual_alpha=manual_alpha)
+                                        cv_folds=cv_folds, pruning_method=pruning_method, manual_alpha=manual_alpha,
+                                        class_weight=class_weight)
                         # Calculate stats on original data
                         if model_type == 'classification':
                             stats_dict = calculate_classification_metrics(X, y, model, estimation_method)
