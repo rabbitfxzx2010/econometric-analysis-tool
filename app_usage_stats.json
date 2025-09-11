@@ -1,5 +1,5 @@
 {
-  "total_sessions": 65,
+  "total_sessions": 68,
   "daily_stats": {
     "2025-09-02": {
       "sessions": 60,
@@ -12,10 +12,22 @@
       "unique_users": [],
       "models_run": 15,
       "files_uploaded": 61
+    },
+    "2025-09-05": {
+      "sessions": 2,
+      "unique_users": [],
+      "models_run": 10,
+      "files_uploaded": 29
+    },
+    "2025-09-11": {
+      "sessions": 1,
+      "unique_users": [],
+      "models_run": 0,
+      "files_uploaded": 0
     }
   },
   "hourly_distribution": {
-    "0": 0,
+    "0": 1,
     "1": 0,
     "2": 0,
     "3": 0,
@@ -28,7 +40,7 @@
     "10": 0,
     "11": 0,
     "12": 0,
-    "13": 6,
+    "13": 8,
     "14": 0,
     "15": 0,
     "16": 4,
@@ -41,13 +53,14 @@
     "23": 0
   },
   "feature_usage": {
-    "file_uploads": 166,
-    "model_runs": 43,
-    "visualizations_created": 50,
+    "file_uploads": 195,
+    "model_runs": 53,
+    "visualizations_created": 70,
     "downloads": 0,
-    "model_decision_tree": 6
+    "model_decision_tree": 6,
+    "model_logistic_regression": 10
   },
   "first_use": "2025-09-02 05:16:07",
-  "last_access": "2025-09-04 17:58:49",
-  "total_models_run": 29
+  "last_access": "2025-09-11 00:58:57",
+  "total_models_run": 39
 }
