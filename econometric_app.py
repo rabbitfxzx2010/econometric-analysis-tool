@@ -5644,9 +5644,8 @@ def main():
                         'use_nested_cv': use_nested_cv,
                         # Store full analysis results for persistence
                         'df_filtered': df_filtered,
-                        'y_valid': y_valid,
-                        'y_pred': y_pred,
-                        'X_valid': X_valid,
+                        'X_for_plotting': X_for_plotting if 'X_for_plotting' in locals() else None,
+                        'y': y,
                         'tree_fig': tree_fig if 'tree_fig' in locals() else None,
                         'confusion_fig': confusion_fig if 'confusion_fig' in locals() else None,
                         'actual_pred_fig': actual_pred_fig if 'actual_pred_fig' in locals() else None,
@@ -5675,8 +5674,8 @@ def main():
                 coef_fig = last_analysis.get('coef_fig')
                 importance_df = last_analysis.get('importance_df')
                 pruning_fig = last_analysis.get('pruning_fig')
-                y_valid = last_analysis.get('y_valid')
-                y_pred = last_analysis.get('y_pred')
+                X_for_plotting = last_analysis.get('X_for_plotting')
+                y = last_analysis.get('y')
                 
                 if model and stats_dict:
                     # Display performance metrics header
