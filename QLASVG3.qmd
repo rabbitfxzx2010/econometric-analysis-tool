@@ -1,0 +1,63 @@
+---
+title: "Untitled"
+format: svg
+---
+
+<!-- Quick Learning Analytics — outline letters; Q with wider bars; new colors (Q=red, L=blue, A=yellow) -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="300" viewBox="0 0 1000 300" role="img" aria-label="Quick Learning Analytics logo">
+  <title>Quick Learning Analytics</title>
+  <desc>Outline-only Q, L, A with updated colors (Q=red, L=blue, A=yellow). Q contains three wider bars with smaller gaps.</desc>
+  <defs>
+    <style>
+      /* New color palette from reference image */
+      .qStroke { stroke:#FF1E1E; }   /* red */
+      .lStroke { stroke:#1440FF; }   /* blue */
+      .aStroke { stroke:#F2C200; }   /* yellow */
+
+      /* Wordmark colors mapped to Q, L, A */
+      .qColor { fill:#FF1E1E; }
+      .lColor { fill:#1440FF; }
+      .aColor { fill:#F2C200; }
+
+      /* Shared wordmark typography */
+      .textBase {
+        font-family: Inter, Poppins, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+        font-weight: 800;
+        font-size: 70px;
+        letter-spacing: -0.01em;
+      }
+    </style>
+  </defs>
+
+  <!-- Symbol block -->
+  <g transform="translate(28,26)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Q: red ring with tail (outline only) -->
+    <circle cx="110" cy="110" r="78" class="qStroke" stroke-width="14"/>
+    <path d="M160 160 L184 184" class="qStroke" stroke-width="14"/>
+
+    <!-- Bar chart inside Q (wider bars, smaller gaps). Left→right: red, blue, yellow -->
+    <!-- Increased stroke-width from 10 -> 16 and tightened centers (92,112,132) -->
+    <line x1="92"  y1="170" x2="92"  y2="128" class="qStroke" stroke-width="16"/>
+    <line x1="112" y1="170" x2="112" y2="114" class="lStroke" stroke-width="16"/>
+    <line x1="132" y1="170" x2="132" y2="98"  class="aStroke" stroke-width="16"/>
+
+    <!-- L: blue right angle (outline) -->
+    <path d="M192 68 L192 178 L240 178" class="lStroke" stroke-width="18"/>
+
+    <!-- A: yellow outline with crossbar -->
+    <path d="M250 178 L272 92 L294 178" class="aStroke" stroke-width="14"/>
+    <line x1="258" y1="138" x2="286" y2="138" class="aStroke" stroke-width="10"/>
+  </g>
+
+  <!-- Wordmark (stacked) with matching colors; reduced gap between lines -->
+  <g transform="translate(360,120)">
+    <text class="textBase">
+      <tspan class="qColor">Quick</tspan>
+      <tspan> </tspan>
+      <tspan class="lColor">Learning</tspan>
+    </text>
+  </g>
+  <g transform="translate(360,184)">
+    <text class="textBase aColor">Analytics</text>
+  </g>
+</svg>

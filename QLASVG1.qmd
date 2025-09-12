@@ -1,0 +1,46 @@
+---
+title: "Untitled"
+format: svg
+---
+
+<!-- Quick Learning Analytics — Stacked logo, outline letters, bars as strokes -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="300" viewBox="0 0 1000 300" role="img" aria-label="Quick Learning Analytics logo">
+  <title>Quick Learning Analytics</title>
+  <desc>Outline-only Q, L, A in blue/green/red. Q contains a minimal bar chart drawn as vertical strokes.</desc>
+  <defs>
+    <style>
+      .blue { stroke:#1E88E5; }
+      .green { stroke:#43A047; }
+      .red { stroke:#E53935; }
+      .text1 { font-family: Inter, Poppins, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; font-weight: 800; font-size: 70px; fill:#0A2540; letter-spacing:-0.01em; }
+      .text2 { font-family: Inter, Poppins, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; font-weight: 600; font-size: 44px; fill:#0A2540; letter-spacing:0.01em; }
+    </style>
+  </defs>
+
+  <!-- Symbol block -->
+  <g transform="translate(28,26)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Q: blue ring with tail (outline only) -->
+    <circle cx="110" cy="110" r="78" class="blue" stroke-width="14"/>
+    <path d="M160 160 L184 184" class="blue" stroke-width="14"/>
+
+    <!-- Bar chart inside Q as thin strokes (green, red, blue) -->
+    <line x1="88"  y1="170" x2="88"  y2="128" class="green" stroke-width="10"/>
+    <line x1="110" y1="170" x2="110" y2="114" class="red"   stroke-width="10"/>
+    <line x1="132" y1="170" x2="132" y2="98"  class="blue"  stroke-width="10"/>
+
+    <!-- L: outline-only right angle (green) -->
+    <path d="M192 68 L192 178 L240 178" class="green" stroke-width="18"/>
+
+    <!-- A: outline-only (red) -->
+    <path d="M250 178 L272 92 L294 178" class="red" stroke-width="14"/>
+    <line x1="258" y1="138" x2="286" y2="138" class="red" stroke-width="10"/>
+  </g>
+
+  <!-- Wordmark (stacked) -->
+  <g transform="translate(360,120)">
+    <text class="text1">Quick Learning</text>
+  </g>
+  <g transform="translate(360,200)">
+    <text class="text2">Analytics</text>
+  </g>
+</svg>
