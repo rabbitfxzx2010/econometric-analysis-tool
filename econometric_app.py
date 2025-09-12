@@ -5628,7 +5628,7 @@ def main():
                         for insight in insights:
                             st.write(insight)
                             
-                    # Store analysis completion flag and essential results in session state
+                    # Store analysis completion flag and ALL detailed results in session state
                     st.session_state.analysis_complete = True
                     st.session_state.last_analysis = {
                         'method': estimation_method,
@@ -5641,7 +5641,18 @@ def main():
                         'include_constant': include_constant,
                         'uploaded_file': uploaded_file,
                         'use_scaling': use_scaling,
-                        'use_nested_cv': use_nested_cv
+                        'use_nested_cv': use_nested_cv,
+                        # Store full analysis results for persistence
+                        'df_filtered': df_filtered,
+                        'y_valid': y_valid,
+                        'y_pred': y_pred,
+                        'X_valid': X_valid,
+                        'tree_fig': tree_fig if 'tree_fig' in locals() else None,
+                        'confusion_fig': confusion_fig if 'confusion_fig' in locals() else None,
+                        'actual_pred_fig': actual_pred_fig if 'actual_pred_fig' in locals() else None,
+                        'coef_fig': coef_fig if 'coef_fig' in locals() else None,
+                        'importance_df': importance_df if 'importance_df' in locals() else None,
+                        'pruning_fig': pruning_fig if 'pruning_fig' in locals() else None
                     }
                     
             # Display results if analysis has been completed (for persistence after download button clicks)
@@ -5657,7 +5668,20 @@ def main():
                 dependent_var = last_analysis.get('dependent_var')
                 independent_vars = last_analysis.get('independent_vars')
                 
+                # Get stored figures and data
+                tree_fig = last_analysis.get('tree_fig')
+                confusion_fig = last_analysis.get('confusion_fig')
+                actual_pred_fig = last_analysis.get('actual_pred_fig')
+                coef_fig = last_analysis.get('coef_fig')
+                importance_df = last_analysis.get('importance_df')
+                pruning_fig = last_analysis.get('pruning_fig')
+                y_valid = last_analysis.get('y_valid')
+                y_pred = last_analysis.get('y_pred')
+                
                 if model and stats_dict:
+                    # Display performance metrics header
+                    st.markdown('<h2 class="subheader">📊 Model Performance</h2>', unsafe_allow_html=True)
+                    
                     # Display basic metrics
                     if model_type == 'classification':
                         col1, col2, col3, col4 = st.columns(4)
@@ -5670,6 +5694,17 @@ def main():
                             st.metric("Recall", f"{float(stats_dict['recall']):.4f}")
                         with col4:
                             st.metric("F1-Score", f"{float(stats_dict['f1_score']):.4f}")
+                        
+                        # Display confusion matrix if available
+                        if confusion_fig:
+                            st.markdown("### 🎯 Confusion Matrix")
+                            st.plotly_chart(confusion_fig, use_container_width=True)
+                        
+                        # Display actual vs predicted if available
+                        if actual_pred_fig:
+                            st.markdown("### 📈 Model Predictions")
+                            st.plotly_chart(actual_pred_fig, use_container_width=True)
+                            
                     else:
                         col1, col2, col3, col4 = st.columns(4)
                         
@@ -5681,6 +5716,44 @@ def main():
                             st.metric("RMSE", f"{float(stats_dict['rmse']):.4f}")
                         with col4:
                             st.metric("Observations", int(stats_dict['n_obs']))
+                        
+                        # Display actual vs predicted if available
+                        if actual_pred_fig:
+                            st.markdown("### 📈 Actual vs Predicted Values")
+                            st.plotly_chart(actual_pred_fig, use_container_width=True)
+                    
+                    # Display coefficient plot if available
+                    if coef_fig:
+                        st.markdown("### 📊 Model Coefficients")
+                        st.plotly_chart(coef_fig, use_container_width=True)
+                    
+                    # Display feature importance if available
+                    if importance_df is not None:
+                        st.markdown("### 🔥 Feature Importance")
+                        st.dataframe(importance_df, use_container_width=True)
+                    
+                    # Display decision tree if available
+                    if tree_fig:
+                        st.markdown("### 🌳 Decision Tree Visualization")
+                        st.info("🌳 Tree visualization shows probabilities and percentages clearly displayed on each node. Colors indicate confidence levels.")
+                        st.success("💡 **Tip:** Click the fullscreen button (⛶) in the top-right corner of the plot for the best viewing experience!")
+                        st.plotly_chart(tree_fig, use_container_width=True, config={
+                            'displayModeBar': True, 
+                            'displaylogo': False,
+                            'modeBarButtonsToRemove': ['lasso2d', 'select2d'],
+                            'toImageButtonOptions': {
+                                'format': 'png',
+                                'filename': 'decision_tree',
+                                'height': 1200,
+                                'width': 1600,
+                                'scale': 2
+                            }
+                        })
+                    
+                    # Display pruning results if available
+                    if pruning_fig:
+                        st.markdown("### 🌿 Cost Complexity Pruning Results")
+                        st.plotly_chart(pruning_fig, use_container_width=True)
                     
                     # Show download buttons for notebooks and HTML
                     st.markdown("---")
