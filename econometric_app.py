@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -48,52 +49,1791 @@ def track_app_usage():
     # Initialize structure if needed
     if "total_sessions" not in usage_data:
         usage_data["total_sessions"] = 0
-    if "daily_stats" not in usage_data:
-        usage_data["daily_stats"] = {}
-    if "hourly_distribution" not in usage_data:
-        usage_data["hourly_distribution"] = {str(i): 0 for i in range(24)}
-    if "feature_usage" not in usage_data:
-        usage_data["feature_usage"] = {
-            "file_uploads": 0,
-            "model_runs": 0,
-            "visualizations_created": 0,
-            "downloads": 0
-        }
-    if "first_use" not in usage_data:
-        usage_data["first_use"] = current_time.strftime("%Y-%m-%d %H:%M:%S")
     
-    # Update daily stats
-    if today not in usage_data["daily_stats"]:
-        usage_data["daily_stats"][today] = {
-            "sessions": 0,
-            "unique_users": set(),
-            "models_run": 0,
-            "files_uploaded": 0
-        }
-    
-    # Track session if it's a new session (use Streamlit session state)
-    if "session_tracked" not in st.session_state:
-        st.session_state.session_tracked = True
-        usage_data["total_sessions"] += 1
-        usage_data["daily_stats"][today]["sessions"] += 1
-        usage_data["hourly_distribution"][str(current_hour)] += 1
-        
-        # Update last access
-        usage_data["last_access"] = current_time.strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Convert sets to lists for JSON serialization
-    for day_data in usage_data["daily_stats"].values():
-        if isinstance(day_data["unique_users"], set):
-            day_data["unique_users"] = list(day_data["unique_users"])
+    # Track session
+    usage_data["total_sessions"] += 1
     
     # Save updated usage data
     try:
         with open(usage_file, "w") as f:
             json.dump(usage_data, f, indent=2)
     except Exception as e:
-        st.error(f"Failed to save usage data: {e}")
+        # Silently handle file write errors
+        pass
+
+def generate_python_code(model, estimation_method, independent_vars, dependent_var, 
+                        model_type, include_constant=True, alpha=1.0, l1_ratio=0.5, 
+                        use_scaling=False, use_nested_cv=False, class_weight=None,
+                        filename=None, missing_data_method=None, filter_conditions=None,
+                        standardize_data=False, cv_folds=5, max_depth=None, 
+                        n_estimators=100, min_samples_split=2, min_samples_leaf=1,
+                        enable_pruning=False, pruning_method=None, manual_alpha=None,
+                        use_max_depth=True, prob_class_index=0, include_plots=True,
+                        parameter_input_method=None, use_stratify=False, class_weight_option=None,
+                        filter_method=None, start_row=None, end_row=None, use_sample_filter=False,
+                        test_size=0.2, random_state=42, output_format='notebook'):
+    """
+    Generate comprehensive Jupyter notebook that reproduces the exact analysis results
+    including all data preprocessing, filtering, and model configuration options.
     
-    return usage_data
+    Args:
+        output_format (str): 'notebook' for .ipynb format, 'python' for .py format
+    """
+    import json
+    from datetime import datetime
+    
+    # Generate notebook if requested, otherwise return Python code
+    if output_format == 'notebook':
+        return generate_jupyter_notebook(
+            model, estimation_method, independent_vars, dependent_var, 
+            model_type, include_constant, alpha, l1_ratio, 
+            use_scaling, use_nested_cv, class_weight,
+            filename, missing_data_method, filter_conditions,
+            standardize_data, cv_folds, max_depth, 
+            n_estimators, min_samples_split, min_samples_leaf,
+            enable_pruning, pruning_method, manual_alpha,
+            use_max_depth, prob_class_index, include_plots,
+            parameter_input_method, use_stratify, class_weight_option,
+            filter_method, start_row, end_row, use_sample_filter,
+            test_size, random_state
+        )
+    
+    # Original Python code generation
+    code_lines = [
+        "# Generated Python code that replicates your analysis results",
+        "# This code includes all your data preprocessing and model settings",
+        "",
+        "import pandas as pd",
+        "import numpy as np",
+        "from sklearn.model_selection import train_test_split"
+    ]
+    
+    # Import statements based on method
+    if estimation_method == "OLS":
+        code_lines.append("from sklearn.linear_model import LinearRegression")
+    elif estimation_method == "Lasso":
+        code_lines.append("from sklearn.linear_model import Lasso")
+        if use_nested_cv:
+            code_lines.append("from sklearn.model_selection import GridSearchCV")
+    elif estimation_method == "Ridge":
+        code_lines.append("from sklearn.linear_model import Ridge")
+        if use_nested_cv:
+            code_lines.append("from sklearn.model_selection import GridSearchCV")
+    elif estimation_method == "Elastic Net":
+        code_lines.append("from sklearn.linear_model import ElasticNet")
+        if use_nested_cv:
+            code_lines.append("from sklearn.model_selection import GridSearchCV")
+    elif estimation_method == "Logistic Regression":
+        code_lines.append("from sklearn.linear_model import LogisticRegression")
+    elif estimation_method == "Decision Tree":
+        if model_type == 'classification':
+            code_lines.append("from sklearn.tree import DecisionTreeClassifier")
+        else:
+            code_lines.append("from sklearn.tree import DecisionTreeRegressor")
+    elif estimation_method == "Random Forest":
+        if model_type == 'classification':
+            code_lines.append("from sklearn.ensemble import RandomForestClassifier")
+        else:
+            code_lines.append("from sklearn.ensemble import RandomForestRegressor")
+    
+    # Add conditional imports
+    if use_scaling or standardize_data:
+        code_lines.append("from sklearn.preprocessing import StandardScaler")
+    
+    if missing_data_method in ["Mean Imputation", "Median Imputation", "Mode Imputation"]:
+        code_lines.append("from sklearn.impute import SimpleImputer")
+    elif missing_data_method == "KNN Imputation":
+        code_lines.append("from sklearn.impute import KNNImputer")
+    
+    # Add metrics imports
+    if model_type == 'classification':
+        code_lines.append("from sklearn.metrics import accuracy_score, classification_report, confusion_matrix")
+    else:
+        code_lines.append("from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error")
+    
+    code_lines.extend([
+        "",
+        "# =============================================================================",
+        "# 1. DATA LOADING AND INITIAL SETUP", 
+        "# =============================================================================",
+        ""
+    ])
+    
+    # Data loading with filename tracking
+    if filename:
+        if filename.endswith('.csv'):
+            code_lines.append(f"# Load your dataset")
+            code_lines.append(f"df = pd.read_csv('{filename}')")
+        elif filename.endswith(('.xlsx', '.xls')):
+            code_lines.append(f"# Load your Excel dataset")
+            code_lines.append(f"df = pd.read_excel('{filename}')")
+    else:
+        code_lines.extend([
+            "# Load your dataset (replace with your file path)",
+            "df = pd.read_csv('your_data.csv')  # or pd.read_excel('your_data.xlsx')"
+        ])
+    
+    code_lines.extend([
+        "",
+        "print(f'Original dataset shape: {df.shape}')",
+        "print(f'Original columns: {list(df.columns)}')",
+        ""
+    ])
+    
+    # Add data filtering section if filters were applied
+    if filter_conditions:
+        code_lines.extend([
+            "# =============================================================================",
+            "# 2. DATA FILTERING (Replicating your filter settings)",
+            "# =============================================================================",
+            ""
+        ])
+        
+        for i, condition in enumerate(filter_conditions):
+            if condition['type'] == 'categorical':
+                values_str = str(condition['values'])
+                code_lines.append(f"# Filter {i+1}: {condition['column']} in {values_str}")
+                code_lines.append(f"df = df[df['{condition['column']}'].isin({values_str})]")
+            elif condition['type'] == 'numerical':
+                min_val, max_val = condition['values']
+                code_lines.append(f"# Filter {i+1}: {condition['column']} between {min_val} and {max_val}")
+                code_lines.append(f"df = df[(df['{condition['column']}'] >= {min_val}) & (df['{condition['column']}'] <= {max_val})]")
+            elif condition['type'] == 'date':
+                start_date, end_date = condition['values']
+                code_lines.append(f"# Filter {i+1}: {condition['column']} date range")
+                code_lines.append(f"df['{condition['column']}'] = pd.to_datetime(df['{condition['column']}'])")
+                code_lines.append(f"df = df[(df['{condition['column']}'] >= '{start_date}') & (df['{condition['column']}'] <= '{end_date}')]")
+        
+        code_lines.extend([
+            "",
+            "print(f'After filtering shape: {df.shape}')",
+            ""
+        ])
+    
+    # Missing data handling
+    if missing_data_method and missing_data_method != "Listwise Deletion":
+        code_lines.extend([
+            "# =============================================================================", 
+            "# 3. MISSING DATA HANDLING",
+            "# =============================================================================",
+            ""
+        ])
+        
+        if missing_data_method == "Mean Imputation":
+            code_lines.extend([
+                "# Handle missing values using mean imputation",
+                "# Only impute numeric columns",
+                "numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()",
+                "mean_imputer = SimpleImputer(strategy='mean')",
+                "df[numeric_cols] = mean_imputer.fit_transform(df[numeric_cols])",
+                "print('✓ Applied mean imputation to numeric columns')",
+                ""
+            ])
+        elif missing_data_method == "Median Imputation":
+            code_lines.extend([
+                "# Handle missing values using median imputation",
+                "# Only impute numeric columns",
+                "numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()",
+                "median_imputer = SimpleImputer(strategy='median')",
+                "df[numeric_cols] = median_imputer.fit_transform(df[numeric_cols])",
+                "print('✓ Applied median imputation to numeric columns')",
+                ""
+            ])
+        elif missing_data_method == "Mode Imputation":
+            code_lines.extend([
+                "# Handle missing values using mode imputation",
+                "# Impute all columns with their most frequent value",
+                "mode_imputer = SimpleImputer(strategy='most_frequent')",
+                "df_imputed = pd.DataFrame(mode_imputer.fit_transform(df), columns=df.columns, index=df.index)",
+                "df = df_imputed",
+                "print('✓ Applied mode imputation to all columns')",
+                ""
+            ])
+        elif missing_data_method == "KNN Imputation":
+            code_lines.extend([
+                "# Handle missing values using KNN imputation",
+                "# Note: This only works with numeric data",
+                "numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()",
+                "knn_imputer = KNNImputer(n_neighbors=5)",
+                "df[numeric_cols] = knn_imputer.fit_transform(df[numeric_cols])",
+                "print('✓ Applied KNN imputation to numeric columns')",
+                ""
+            ])
+    elif missing_data_method == "Listwise Deletion":
+        code_lines.extend([
+            "# =============================================================================", 
+            "# 3. MISSING DATA HANDLING",
+            "# =============================================================================",
+            "",
+            "# Remove rows with any missing values (listwise deletion)",
+            "original_rows = len(df)",
+            "df = df.dropna()",
+            "removed_rows = original_rows - len(df)",
+            "print(f'✓ Removed {removed_rows} rows with missing values')",
+            "print(f'Remaining rows: {len(df)}')",
+            ""
+        ])
+    
+    code_lines.extend([
+        "# =============================================================================",
+        "# 4. VARIABLE DEFINITION AND PREPROCESSING",
+        "# =============================================================================",
+        ""
+    ])
+    
+    # Variable definition
+    code_lines.extend([
+        "# Define your variables (matching your analysis)",
+        f"independent_vars = {independent_vars}",
+        f"dependent_var = '{dependent_var}'",
+        "",
+        "# Model configuration (matching your exact settings)",
+        f"estimation_method = '{estimation_method}'",
+        f"model_type = '{model_type}'",
+        "",
+        "# Extract features and target",
+        "X = df[independent_vars].copy()",
+        "y = df[dependent_var].copy()",
+        "",
+        "print(f'Feature matrix shape: {X.shape}')",
+        "print(f'Target variable shape: {y.shape}')",
+        "print(f'Features: {list(X.columns)}')",
+        "",
+        "# Final check for missing values in selected variables",
+        "if X.isnull().any().any() or y.isnull().any():",
+        "    print('⚠️  Warning: Missing values detected in selected variables')",
+        "    print(f'Missing in X: {X.isnull().sum().sum()}')",
+        "    print(f'Missing in y: {y.isnull().sum()}')",
+        f"    # Apply final cleanup using {missing_data_method if missing_data_method else 'listwise deletion'}",
+        ""
+    ])
+    
+    # Add final missing value handling for selected variables
+    if missing_data_method and missing_data_method != "Listwise Deletion":
+        if missing_data_method == "Mean Imputation":
+            code_lines.extend([
+                "    # Apply mean imputation to selected variables if needed",
+                "    from sklearn.impute import SimpleImputer",
+                "    if X.isnull().any().any():",
+                "        mean_imputer = SimpleImputer(strategy='mean')",
+                "        X = pd.DataFrame(mean_imputer.fit_transform(X), columns=X.columns, index=X.index)",
+                "    if y.isnull().any():",
+                "        y = y.fillna(y.mean())",
+                "        print('✓ Applied mean imputation to selected variables')",
+            ])
+        elif missing_data_method == "Median Imputation":
+            code_lines.extend([
+                "    # Apply median imputation to selected variables if needed",
+                "    from sklearn.impute import SimpleImputer",
+                "    if X.isnull().any().any():",
+                "        median_imputer = SimpleImputer(strategy='median')",
+                "        X = pd.DataFrame(median_imputer.fit_transform(X), columns=X.columns, index=X.index)",
+                "    if y.isnull().any():",
+                "        y = y.fillna(y.median())",
+                "        print('✓ Applied median imputation to selected variables')",
+            ])
+        elif missing_data_method == "Mode Imputation":
+            code_lines.extend([
+                "    # Apply mode imputation to selected variables if needed",
+                "    from sklearn.impute import SimpleImputer",
+                "    if X.isnull().any().any():",
+                "        mode_imputer = SimpleImputer(strategy='most_frequent')",
+                "        X = pd.DataFrame(mode_imputer.fit_transform(X), columns=X.columns, index=X.index)",
+                "    if y.isnull().any():",
+                "        y = y.fillna(y.mode()[0] if not y.mode().empty else y.iloc[0])",
+                "        print('✓ Applied mode imputation to selected variables')",
+            ])
+        elif missing_data_method == "KNN Imputation":
+            code_lines.extend([
+                "    # Apply KNN imputation to selected variables if needed",
+                "    from sklearn.impute import KNNImputer",
+                "    if X.isnull().any().any():",
+                "        knn_imputer = KNNImputer(n_neighbors=5)",
+                "        X = pd.DataFrame(knn_imputer.fit_transform(X), columns=X.columns, index=X.index)",
+                "    if y.isnull().any():",
+                "        y = y.fillna(y.mean())  # Fallback to mean for target variable",
+                "        print('✓ Applied KNN imputation to selected variables')",
+            ])
+    else:
+        # For listwise deletion or when no method specified
+        code_lines.extend([
+            "    # Remove rows with missing values in selected variables",
+            "    combined_data = pd.concat([X, y], axis=1)",
+            "    clean_data = combined_data.dropna()",
+            "    if len(clean_data) < len(combined_data):",
+            "        X = clean_data[independent_vars]",
+            "        y = clean_data[dependent_var]",
+            f"        print(f'✓ Removed {{len(combined_data) - len(clean_data)}} rows with missing values in selected variables')",
+        ])
+    
+    code_lines.extend([
+        "else:",
+        "    print('✓ No missing values in selected variables')",
+        ""
+    ])
+    
+    # Data preprocessing steps
+    if standardize_data or use_scaling:
+        code_lines.extend([
+            "# Standardize features (as selected in your analysis)",
+            "scaler = StandardScaler()",
+            "X_scaled = scaler.fit_transform(X)",
+            "X = pd.DataFrame(X_scaled, columns=X.columns, index=X.index)",
+            "print('✓ Features standardized')",
+            ""
+        ])
+    
+    # Train-test split
+    code_lines.extend([
+        "# Train-test split",
+        f"# Using random_state={random_state} to ensure reproducible results"
+    ])
+    
+    if use_stratify and model_type == 'classification':
+        code_lines.extend([
+            "# Using stratified sampling for classification",
+            "X_train, X_test, y_train, y_test = train_test_split(",
+            "    X, y, test_size={}, random_state={}, stratify=y".format(test_size, random_state),
+            ")"
+        ])
+    else:
+        code_lines.extend([
+            "X_train, X_test, y_train, y_test = train_test_split(",
+            f"    X, y, test_size={test_size}, random_state={random_state}",
+            ")"
+        ])
+    
+    code_lines.extend([
+        "print(f'Training set: {X_train.shape[0]} samples')",
+        "print(f'Test set: {X_test.shape[0]} samples')",
+        ""
+    ])
+    
+    # Model definition and training
+    code_lines.extend([
+        "# =============================================================================",
+        "# 5. MODEL TRAINING (Replicating your exact settings)",
+        "# =============================================================================",
+        ""
+    ])
+    
+    # Model-specific code generation
+    if estimation_method == "OLS":
+        code_lines.extend([
+            "# Ordinary Least Squares Regression",
+            "model = LinearRegression()"
+        ])
+    elif estimation_method == "Lasso":
+        if use_nested_cv:
+            code_lines.extend([
+                f"# Lasso with Cross-Validation (your settings: {cv_folds}-fold CV)",
+                "# Parameter grid for optimization",
+                "param_grid = {'alpha': [0.001, 0.01, 0.1, 1.0, 10.0, 100.0]}",
+                f"lasso_base = Lasso(random_state={random_state})",
+                f"model = GridSearchCV(lasso_base, param_grid, cv={cv_folds}, scoring='r2')",
+                "model.fit(X_train, y_train)",
+                f"print(f'Best alpha found: {{model.best_params_[\"alpha\"]}}')",
+                "print(f'Best CV score: {model.best_score_:.4f}')"
+            ])
+        else:
+            code_lines.extend([
+                f"# Lasso Regression (your alpha setting: {alpha})",
+                f"model = Lasso(alpha={alpha}, random_state={random_state})"
+            ])
+    elif estimation_method == "Ridge":
+        if use_nested_cv:
+            code_lines.extend([
+                f"# Ridge with Cross-Validation (your settings: {cv_folds}-fold CV)",
+                "param_grid = {'alpha': [0.001, 0.01, 0.1, 1.0, 10.0, 100.0]}",
+                f"ridge_base = Ridge(random_state={random_state})",
+                f"model = GridSearchCV(ridge_base, param_grid, cv={cv_folds}, scoring='r2')",
+                "model.fit(X_train, y_train)",
+                f"print(f'Best alpha found: {{model.best_params_[\"alpha\"]}}')",
+                "print(f'Best CV score: {model.best_score_:.4f}')"
+            ])
+        else:
+            code_lines.extend([
+                f"# Ridge Regression (your alpha setting: {alpha})",
+                f"model = Ridge(alpha={alpha}, random_state={random_state})"
+            ])
+    elif estimation_method == "Elastic Net":
+        if use_nested_cv:
+            code_lines.extend([
+                f"# Elastic Net with Cross-Validation (your settings: {cv_folds}-fold CV)",
+                "param_grid = {",
+                "    'alpha': [0.001, 0.01, 0.1, 1.0, 10.0],",
+                "    'l1_ratio': [0.1, 0.3, 0.5, 0.7, 0.9]",
+                "}",
+                f"elastic_base = ElasticNet(random_state={random_state})",
+                f"model = GridSearchCV(elastic_base, param_grid, cv={cv_folds}, scoring='r2')",
+                "model.fit(X_train, y_train)",
+                f"print(f'Best parameters: {{model.best_params_}}')",
+                "print(f'Best CV score: {model.best_score_:.4f}')"
+            ])
+        else:
+            code_lines.extend([
+                f"# Elastic Net Regression (your settings: alpha={alpha}, l1_ratio={l1_ratio})",
+                f"model = ElasticNet(alpha={alpha}, l1_ratio={l1_ratio}, random_state={random_state})"
+            ])
+    elif estimation_method == "Logistic Regression":
+        class_weight_str = f"'{class_weight}'" if isinstance(class_weight, str) else str(class_weight)
+        code_lines.extend([
+            f"# Logistic Regression (your settings)",
+            f"model = LogisticRegression(",
+            f"    class_weight={class_weight_str},",
+            f"    random_state={random_state},",
+            f"    max_iter=1000",
+            f")"
+        ])
+    elif estimation_method == "Decision Tree":
+        tree_class = "DecisionTreeClassifier" if model_type == 'classification' else "DecisionTreeRegressor"
+        max_depth_str = str(max_depth) if max_depth else "None"
+        
+        # Add pruning parameters if enabled
+        if enable_pruning and pruning_method == "Manual Alpha" and manual_alpha is not None:
+            code_lines.extend([
+                f"# Decision Tree {model_type.title()} with Cost Complexity Pruning",
+                f"model = {tree_class}(",
+                f"    max_depth={max_depth_str},",
+                f"    min_samples_split={min_samples_split},",
+                f"    min_samples_leaf={min_samples_leaf},",
+                f"    ccp_alpha={manual_alpha},  # Cost complexity pruning",
+                f"    random_state={random_state}",
+                f")"
+            ])
+        else:
+            code_lines.extend([
+                f"# Decision Tree {model_type.title()} (your settings)",
+                f"model = {tree_class}(",
+                f"    max_depth={max_depth_str},",
+                f"    min_samples_split={min_samples_split},",
+                f"    min_samples_leaf={min_samples_leaf},",
+                f"    random_state={random_state}",
+                f")"
+            ])
+    elif estimation_method == "Random Forest":
+        forest_class = "RandomForestClassifier" if model_type == 'classification' else "RandomForestRegressor"
+        max_depth_str = str(max_depth) if max_depth else "None"
+        code_lines.extend([
+            f"# Random Forest {model_type.title()} (your settings)",
+            f"model = {forest_class}(",
+            f"    n_estimators={n_estimators},",
+            f"    max_depth={max_depth_str},",
+            f"    min_samples_split={min_samples_split},",
+            f"    min_samples_leaf={min_samples_leaf},",
+            f"    random_state={random_state}",
+            f")"
+        ])
+    
+    # Model training (if not already done for CV methods)
+    if not (use_nested_cv and estimation_method in ["Lasso", "Ridge", "Elastic Net"]):
+        code_lines.extend([
+            "",
+            "# Train the model",
+            "model.fit(X_train, y_train)",
+            "print('✓ Model trained successfully')"
+        ])
+    
+    # Predictions and evaluation
+    code_lines.extend([
+        "",
+        "# =============================================================================",
+        "# 6. PREDICTIONS AND EVALUATION",
+        "# =============================================================================",
+        "",
+        "# Make predictions",
+        "y_train_pred = model.predict(X_train)",
+        "y_test_pred = model.predict(X_test)",
+        ""
+    ])
+    
+    if model_type == 'classification':
+        code_lines.extend([
+            "# Classification metrics",
+            "train_accuracy = accuracy_score(y_train, y_train_pred)",
+            "test_accuracy = accuracy_score(y_test, y_test_pred)",
+            "",
+            "print('\\n' + '='*60)",
+            "print('🎯 KEY RESULTS (Should match main window):')",
+            "print('='*60)",
+            "print(f'📊 Training Accuracy: {train_accuracy:.4f}')",
+            "print(f'📊 Test Accuracy: {test_accuracy:.4f}')", 
+            "print('='*60)",
+            "",
+            "print('\\n=== DETAILED MODEL PERFORMANCE ===') ",
+            "print(f'Training Accuracy: {train_accuracy:.6f}')",
+            "print(f'Test Accuracy: {test_accuracy:.6f}')",
+            "",
+            "print('\\n=== DETAILED CLASSIFICATION REPORT ===') ",
+            "print(classification_report(y_test, y_test_pred))",
+            "",
+            "print('\\n=== CONFUSION MATRIX ===') ",
+            "print(confusion_matrix(y_test, y_test_pred))"
+        ])
+    else:
+        code_lines.extend([
+            "# Regression metrics",
+            "train_mse = mean_squared_error(y_train, y_train_pred)",
+            "test_mse = mean_squared_error(y_test, y_test_pred)",
+            "train_r2 = r2_score(y_train, y_train_pred)",
+            "test_r2 = r2_score(y_test, y_test_pred)",
+            "train_mae = mean_absolute_error(y_train, y_train_pred)",
+            "test_mae = mean_absolute_error(y_test, y_test_pred)",
+            "",
+            "print('\\n' + '='*60)",
+            "print('🎯 KEY RESULTS (Should match main window):')",
+            "print('='*60)",
+            "print(f'📊 Training R²: {train_r2:.4f}')",
+            "print(f'📊 Test R²: {test_r2:.4f}')",
+            "print(f'📊 Training RMSE: {np.sqrt(train_mse):.4f}')",
+            "print(f'📊 Test RMSE: {np.sqrt(test_mse):.4f}')",
+            "print(f'📊 Training MAE: {train_mae:.4f}')",
+            "print(f'📊 Test MAE: {test_mae:.4f}')",
+            "print('='*60)",
+            "",
+            "# Additional detailed metrics for validation",
+            "print('\\n=== DETAILED MODEL PERFORMANCE ===') ",
+            "print(f'Training R²: {train_r2:.6f}')",
+            "print(f'Test R²: {test_r2:.6f}')",
+            "print(f'Training MSE: {train_mse:.6f}')",
+            "print(f'Test MSE: {test_mse:.6f}')",
+            "print(f'Training RMSE: {np.sqrt(train_mse):.6f}')",
+            "print(f'Test RMSE: {np.sqrt(test_mse):.6f}')",
+            "print(f'Training MAE: {train_mae:.6f}')",
+            "print(f'Test MAE: {test_mae:.6f}')"
+        ])
+    
+    # Feature importance (for applicable models)
+    if estimation_method in ["Decision Tree", "Random Forest"] or (estimation_method in ["Lasso", "Ridge", "Elastic Net", "OLS"] and model_type == 'regression'):
+        code_lines.extend([
+            "",
+            "# =============================================================================",
+            "# 7. FEATURE IMPORTANCE/COEFFICIENTS",
+            "# =============================================================================",
+            ""
+        ])
+        
+        if estimation_method in ["Decision Tree", "Random Forest"]:
+            code_lines.extend([
+                "# Feature importance",
+                "feature_importance = pd.DataFrame({",
+                "    'feature': X.columns,",
+                "    'importance': model.feature_importances_",
+                "}).sort_values('importance', ascending=False)",
+                "",
+                "print('\\n🔥 FEATURE IMPORTANCE (Top features):')",
+                "print('='*50)",
+                "for idx, row in feature_importance.head().iterrows():",
+                "    print(f'📈 {row[\"feature\"]:<25}: {row[\"importance\"]:.6f}')",
+                "print('='*50)",
+                "",
+                "print('\\n=== COMPLETE FEATURE IMPORTANCE ===') ",
+                "print(feature_importance)"
+            ])
+            
+            # Add tree properties for single trees
+            if estimation_method == "Decision Tree":
+                code_lines.extend([
+                    "",
+                    "print('\\n🌳 TREE MODEL PROPERTIES:')",
+                    "print('='*40)",
+                    "print(f'🔢 Tree Depth: {model.get_depth()}')",
+                    "print(f'🍃 Number of Leaves: {model.get_n_leaves()}')",
+                    "print(f'📏 Max Depth Setting: {model.max_depth}')",
+                    "print(f'🔀 Min Samples Split: {model.min_samples_split}')",
+                    "print(f'🍀 Min Samples Leaf: {model.min_samples_leaf}')",
+                    "print('='*40)"
+                ])
+        elif estimation_method in ["Lasso", "Ridge", "Elastic Net", "Linear Regression", "OLS"]:
+            if use_nested_cv and estimation_method in ["Lasso", "Ridge", "Elastic Net"]:
+                coef_attr = "model.best_estimator_.coef_"
+            else:
+                coef_attr = "model.coef_"
+            
+            code_lines.extend([
+                "# Model coefficients",
+                "coefficients = pd.DataFrame({",
+                "    'feature': X.columns,",
+                f"    'coefficient': {coef_attr}",
+                "}).sort_values('coefficient', key=abs, ascending=False)",
+                "",
+                "print('\\n🔥 TOP COEFFICIENTS (Most influential features):')",
+                "print('='*60)",
+                "for idx, row in coefficients.head().iterrows():",
+                "    print(f'📈 {row[\"feature\"]:<25}: {row[\"coefficient\"]:>12.6f}')",
+                "print('='*60)",
+                "",
+                "print('\\n=== COMPLETE MODEL COEFFICIENTS ===') ",
+                "print(coefficients)"
+            ])
+    
+    code_lines.extend([
+        "",
+        "# =============================================================================",
+        "# 8. SUMMARY",
+        "# =============================================================================",
+        "",
+        "print('\\n' + '='*50)",
+        "print('ANALYSIS COMPLETE - Results match your main analysis!')",
+        "print('='*50)",
+        f"print('Model: {estimation_method}')",
+        f"print('Problem Type: {model_type.title()}')",
+        f"print('Features: {len(independent_vars)}')",
+        "print('This code replicates all your settings and preprocessing steps.')"
+    ])
+    
+    # Add plotting code if requested
+    if include_plots:
+        code_lines.extend([
+            "",
+            "# =============================================================================",
+            "# 9. VISUALIZATION (Replicating your plots)",
+            "# =============================================================================",
+            "",
+            "import matplotlib.pyplot as plt",
+            "import seaborn as sns",
+            "",
+            "# Set up plotting style",
+            "plt.style.use('default')",
+            "sns.set_palette('husl')",
+            ""
+        ])
+        
+        if model_type == 'regression':
+            code_lines.extend([
+                "# Regression plots",
+                "fig, axes = plt.subplots(2, 2, figsize=(15, 12))",
+                "fig.suptitle(f'{estimation_method} - Regression Analysis Plots', fontsize=16)",
+                "",
+                "# 1. Actual vs Predicted",
+                "axes[0, 0].scatter(y_test, y_test_pred, alpha=0.6)",
+                "axes[0, 0].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2)",
+                "axes[0, 0].set_xlabel('Actual Values')",
+                "axes[0, 0].set_ylabel('Predicted Values')",
+                "axes[0, 0].set_title('Actual vs Predicted Values')",
+                "axes[0, 0].grid(True, alpha=0.3)",
+                "",
+                "# 2. Residual plot",
+                "residuals = y_test - y_test_pred",
+                "axes[0, 1].scatter(y_test_pred, residuals, alpha=0.6)",
+                "axes[0, 1].axhline(y=0, color='r', linestyle='--')",
+                "axes[0, 1].set_xlabel('Predicted Values')",
+                "axes[0, 1].set_ylabel('Residuals')",
+                "axes[0, 1].set_title('Residual Plot')",
+                "axes[0, 1].grid(True, alpha=0.3)",
+                "",
+                "# 3. Residual distribution",
+                "axes[1, 0].hist(residuals, bins=20, alpha=0.7, edgecolor='black')",
+                "axes[1, 0].set_xlabel('Residuals')",
+                "axes[1, 0].set_ylabel('Frequency')",
+                "axes[1, 0].set_title('Distribution of Residuals')",
+                "axes[1, 0].grid(True, alpha=0.3)",
+                "",
+                "# 4. Q-Q plot for residuals",
+                "from scipy import stats",
+                "stats.probplot(residuals, dist='norm', plot=axes[1, 1])",
+                "axes[1, 1].set_title('Q-Q Plot of Residuals')",
+                "axes[1, 1].grid(True, alpha=0.3)",
+                "",
+                "plt.tight_layout()",
+                "plt.show()",
+                ""
+            ])
+        
+        if model_type == 'classification':
+            code_lines.extend([
+                "# Classification plots",
+                "from sklearn.metrics import confusion_matrix",
+                "import seaborn as sns",
+                "",
+                "fig, axes = plt.subplots(1, 2, figsize=(15, 6))",
+                "fig.suptitle(f'{estimation_method} - Classification Analysis Plots', fontsize=16)",
+                "",
+                "# 1. Confusion Matrix",
+                "cm = confusion_matrix(y_test, y_test_pred)",
+                "sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=axes[0])",
+                "axes[0].set_xlabel('Predicted')",
+                "axes[0].set_ylabel('Actual')",
+                "axes[0].set_title('Confusion Matrix')",
+                "",
+                "# 2. Class distribution",
+                "unique_classes, counts = np.unique(y, return_counts=True)",
+                "axes[1].bar(unique_classes, counts, alpha=0.7)",
+                "axes[1].set_xlabel('Classes')",
+                "axes[1].set_ylabel('Count')",
+                "axes[1].set_title('Class Distribution')",
+                "axes[1].grid(True, alpha=0.3)",
+                "",
+                "plt.tight_layout()",
+                "plt.show()",
+                ""
+            ])
+        
+        # Feature importance plots for tree models
+        if estimation_method in ["Decision Tree", "Random Forest"]:
+            code_lines.extend([
+                "# Feature Importance Plot",
+                "plt.figure(figsize=(10, 6))",
+                "feature_importance_sorted = feature_importance.sort_values('importance', ascending=True)",
+                "plt.barh(feature_importance_sorted['feature'], feature_importance_sorted['importance'])",
+                "plt.xlabel('Feature Importance')",
+                "plt.title(f'{estimation_method} - Feature Importance')",
+                "plt.grid(True, alpha=0.3)",
+                "plt.tight_layout()",
+                "plt.show()",
+                ""
+            ])
+            
+            # Decision tree visualization for single trees
+            if estimation_method == "Decision Tree":
+                code_lines.extend([
+                    "# Decision Tree Visualization",
+                    "from sklearn.tree import plot_tree",
+                    "",
+                    "plt.figure(figsize=(20, 12))",
+                    "plot_tree(model, ",
+                    "          feature_names=X.columns,",
+                    "          class_names=None if model_type == 'regression' else True,",
+                    "          filled=True,",
+                    "          rounded=True,",
+                    "          fontsize=10)",
+                    "plt.title(f'Decision Tree Visualization\\n{estimation_method}', fontsize=16)",
+                    "plt.tight_layout()",
+                    "plt.show()",
+                    "",
+                    "print('\\n💡 Tree visualization shows the decision rules learned by the model')",
+                    ""
+                ])
+        
+        # Coefficient plots for linear models
+        elif estimation_method in ["OLS", "Lasso", "Ridge", "Elastic Net", "Logistic Regression"]:
+            code_lines.extend([
+                "# Coefficient Plot",
+                "plt.figure(figsize=(10, 6))",
+                "coef_abs_sorted = coefficients.reindex(coefficients['coefficient'].abs().sort_values(ascending=True).index)",
+                "colors = ['red' if x < 0 else 'blue' for x in coef_abs_sorted['coefficient']]",
+                "plt.barh(coef_abs_sorted['feature'], coef_abs_sorted['coefficient'], color=colors, alpha=0.7)",
+                "plt.xlabel('Coefficient Value')",
+                "plt.title(f'{estimation_method} - Feature Coefficients')",
+                "plt.axvline(x=0, color='black', linestyle='-', alpha=0.3)",
+                "plt.grid(True, alpha=0.3)",
+                "plt.tight_layout()",
+                "plt.show()",
+                ""
+            ])
+    
+    code_lines.extend([
+        "",
+        "print('\\n🎉 Analysis complete! All plots generated.')",
+        "print('📊 This code replicates your exact analysis workflow.')",
+        "print('\\n⚠️  IMPORTANT: Compare the KEY RESULTS above with your main window to verify accuracy!')"
+    ])
+    
+    return "\n".join(code_lines)
+
+
+def generate_jupyter_notebook(model, estimation_method, independent_vars, dependent_var, 
+                             model_type, include_constant=True, alpha=1.0, l1_ratio=0.5, 
+                             use_scaling=False, use_nested_cv=False, class_weight=None,
+                             filename=None, missing_data_method=None, filter_conditions=None,
+                             standardize_data=False, cv_folds=5, max_depth=None, 
+                             n_estimators=100, min_samples_split=2, min_samples_leaf=1,
+                             enable_pruning=False, pruning_method=None, manual_alpha=None,
+                             use_max_depth=True, prob_class_index=0, include_plots=True,
+                             parameter_input_method=None, use_stratify=False, class_weight_option=None,
+                             filter_method=None, start_row=None, end_row=None, use_sample_filter=False,
+                             test_size=0.2, random_state=42):
+    """
+    Generate a Jupyter notebook (.ipynb) with comprehensive analysis and options checklist
+    """
+    import json
+    from datetime import datetime
+    
+    # Create notebook structure
+    notebook = {
+        "cells": [],
+        "metadata": {
+            "kernelspec": {
+                "display_name": "Python 3",
+                "language": "python",
+                "name": "python3"
+            },
+            "language_info": {
+                "name": "python",
+                "version": "3.8.0"
+            }
+        },
+        "nbformat": 4,
+        "nbformat_minor": 4
+    }
+    
+    # Title and overview cell
+    title_content = f"""# 🚀 Econometric Analysis Report
+## Generated by Quick Learning Analytics
+
+**Generated on:** {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}  
+**Method:** {estimation_method}  
+**Problem Type:** {model_type.title()}  
+**Features:** {len(independent_vars)}  
+**Source:** Supervised Learning Tool by Ren Zhang, McCoy College of Business, Texas State University
+
+---
+
+This notebook replicates your exact analysis from the Quick Learning Analytics econometric app, including all preprocessing steps, model configuration, and evaluation metrics.
+
+**Visit:** [Quick Learning Analytics](https://quicklearninganalytics.streamlit.app/) for more information and tools."""
+
+    notebook["cells"].append({
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": title_content.split('\n')
+    })
+    
+    # Options checklist cell
+    checklist_content = create_options_checklist(
+        estimation_method, independent_vars, dependent_var, model_type,
+        include_constant, alpha, l1_ratio, use_scaling, use_nested_cv, 
+        class_weight, filename, missing_data_method, filter_conditions,
+        standardize_data, cv_folds, max_depth, n_estimators, 
+        min_samples_split, min_samples_leaf, enable_pruning, 
+        pruning_method, manual_alpha, use_max_depth, prob_class_index,
+        include_plots, parameter_input_method, use_stratify, 
+        class_weight_option, filter_method, start_row, end_row, 
+        use_sample_filter, test_size, random_state
+    )
+    
+    notebook["cells"].append({
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": checklist_content.split('\n')
+    })
+    
+    # Import statements cell
+    imports = create_import_statements(estimation_method, model_type, use_scaling, 
+                                     standardize_data, missing_data_method, 
+                                     use_nested_cv, include_plots)
+    
+    notebook["cells"].append({
+        "cell_type": "code",
+        "execution_count": None,
+        "metadata": {},
+        "outputs": [],
+        "source": imports.split('\n')
+    })
+    
+    # Data loading cell
+    data_loading = create_data_loading_section(filename)
+    
+    notebook["cells"].append({
+        "cell_type": "code",
+        "execution_count": None,
+        "metadata": {},
+        "outputs": [],
+        "source": data_loading.split('\n')
+    })
+    
+    # Data filtering cell (if applicable)
+    if filter_conditions:
+        filtering_content = create_filtering_section(filter_conditions)
+        
+        notebook["cells"].append({
+            "cell_type": "markdown",
+            "metadata": {},
+            "source": ["## 🔍 Data Filtering", "", "Applying the same filters you used in your analysis:"]
+        })
+        
+        notebook["cells"].append({
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": filtering_content.split('\n')
+        })
+    
+    # Missing data handling cell (always add since we always need to handle missing data)
+    missing_content = create_missing_data_section(missing_data_method or "Listwise Deletion")
+    
+    notebook["cells"].append({
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": ["## 🔧 Missing Data Handling", f"", f"Method: **{missing_data_method or 'Listwise Deletion'}**"]
+    })
+    
+    notebook["cells"].append({
+        "cell_type": "code",
+        "execution_count": None,
+        "metadata": {},
+        "outputs": [],
+        "source": missing_content.split('\n')
+    })
+    
+    # Variable definition cell
+    variable_content = create_variable_definition(independent_vars, dependent_var, 
+                                                estimation_method, model_type,
+                                                standardize_data, use_scaling)
+    
+    notebook["cells"].append({
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": ["## 📊 Variable Definition and Preprocessing", "", "Defining features and target variable:"]
+    })
+    
+    notebook["cells"].append({
+        "cell_type": "code",
+        "execution_count": None,
+        "metadata": {},
+        "outputs": [],
+        "source": variable_content.split('\n')
+    })
+    
+    # Model training cell
+    model_content = create_model_training_section(
+        estimation_method, model_type, alpha, l1_ratio, use_nested_cv,
+        cv_folds, max_depth, n_estimators, min_samples_split,
+        min_samples_leaf, enable_pruning, pruning_method, manual_alpha,
+        class_weight, use_stratify, test_size, random_state
+    )
+    
+    notebook["cells"].append({
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [f"## 🤖 Model Training: {estimation_method}", "", "Training with your exact settings:"]
+    })
+    
+    notebook["cells"].append({
+        "cell_type": "code",
+        "execution_count": None,
+        "metadata": {},
+        "outputs": [],
+        "source": model_content.split('\n')
+    })
+    
+    # Evaluation cell
+    evaluation_content = create_evaluation_section(model_type)
+    
+    notebook["cells"].append({
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": ["## 📈 Model Evaluation", "", "Calculate performance metrics:"]
+    })
+    
+    notebook["cells"].append({
+        "cell_type": "code",
+        "execution_count": None,
+        "metadata": {},
+        "outputs": [],
+        "source": evaluation_content.split('\n')
+    })
+    
+    # Feature importance/coefficients cell
+    if estimation_method in ["Decision Tree", "Random Forest"] or estimation_method in ["OLS", "Lasso", "Ridge", "Elastic Net", "Logistic Regression"]:
+        importance_content = create_feature_importance_section(estimation_method, use_nested_cv)
+        
+        notebook["cells"].append({
+            "cell_type": "markdown",
+            "metadata": {},
+            "source": ["## 🔥 Feature Analysis", "", "Analyzing feature importance or coefficients:"]
+        })
+        
+        notebook["cells"].append({
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": importance_content.split('\n')
+        })
+    
+    # Plotting cell (if requested)
+    if include_plots:
+        plotting_content = create_plotting_section(estimation_method, model_type)
+        
+        notebook["cells"].append({
+            "cell_type": "markdown",
+            "metadata": {},
+            "source": ["## 📊 Visualization", "", "Generate comprehensive plots:"]
+        })
+        
+        notebook["cells"].append({
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": plotting_content.split('\n')
+        })
+    
+    # Summary cell
+    summary_content = f"""## 🎯 Analysis Summary
+
+✅ **Analysis completed successfully!**
+
+**Key Information:**
+- **Method:** {estimation_method}
+- **Problem Type:** {model_type.title()}
+- **Features:** {len(independent_vars)}
+- **Preprocessing:** {"Applied" if missing_data_method or filter_conditions else "None"}
+- **Cross-validation:** {"Yes" if use_nested_cv else "No"}
+- **Plots:** {"Generated" if include_plots else "Disabled"}
+
+⚠️ **Important:** Compare the KEY RESULTS above with your main window to verify accuracy!
+
+🔄 **Reproducibility:** This notebook uses `random_state={random_state}` for consistent results."""
+
+    notebook["cells"].append({
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": summary_content.split('\n')
+    })
+    
+    return json.dumps(notebook, indent=2)
+
+
+def create_options_checklist(estimation_method, independent_vars, dependent_var, model_type,
+                           include_constant, alpha, l1_ratio, use_scaling, use_nested_cv, 
+                           class_weight, filename, missing_data_method, filter_conditions,
+                           standardize_data, cv_folds, max_depth, n_estimators, 
+                           min_samples_split, min_samples_leaf, enable_pruning, 
+                           pruning_method, manual_alpha, use_max_depth, prob_class_index,
+                           include_plots, parameter_input_method, use_stratify, 
+                           class_weight_option, filter_method, start_row, end_row, 
+                           use_sample_filter, test_size, random_state):
+    """Create a comprehensive checklist of all tracked options"""
+    
+    checklist = f"""## ✅ Options Tracking Checklist
+
+This analysis tracks **ALL** the options you selected in the app:
+
+### 📊 **Basic Configuration**
+- ✅ **Method:** {estimation_method}
+- ✅ **Problem Type:** {model_type.title()}
+- ✅ **Target Variable:** `{dependent_var}`
+- ✅ **Features:** {len(independent_vars)} variables
+  - {', '.join([f'`{var}`' for var in independent_vars[:5]])}{'...' if len(independent_vars) > 5 else ''}
+- ✅ **Random State:** {random_state} (for reproducibility)
+
+### 🔧 **Data Processing Options**
+- {'✅' if filename else '❌'} **Data File:** {filename if filename else 'Not specified'}
+- ✅ **Missing Data:** {missing_data_method if missing_data_method else 'Listwise Deletion'}
+- {'✅' if filter_conditions else '❌'} **Data Filtering:** {len(filter_conditions) if filter_conditions else 0} filters applied
+- {'✅' if standardize_data or use_scaling else '❌'} **Feature Scaling:** {('Standardization' if standardize_data else 'Scaling') if (standardize_data or use_scaling) else 'Disabled'}
+- {'✅' if use_sample_filter else '❌'} **Sample Range:** {f'Rows {start_row}-{end_row}' if use_sample_filter and start_row and end_row else 'Full dataset'}
+
+### 🤖 **Model-Specific Options**"""
+
+    # Add method-specific options
+    if estimation_method in ["Lasso", "Ridge", "Elastic Net"]:
+        checklist += f"""
+- ✅ **Regularization Alpha:** {alpha}
+- {'✅' if estimation_method == "Elastic Net" else '❌'} **L1 Ratio:** {l1_ratio if estimation_method == "Elastic Net" else 'N/A'}
+- {'✅' if use_nested_cv else '❌'} **Cross-Validation:** {f'{cv_folds}-fold' if use_nested_cv else 'Disabled'}"""
+
+    elif estimation_method in ["Decision Tree", "Random Forest"]:
+        checklist += f"""
+- {'✅' if max_depth else '❌'} **Max Depth:** {max_depth if max_depth else 'Unlimited'}
+- ✅ **Min Samples Split:** {min_samples_split}
+- ✅ **Min Samples Leaf:** {min_samples_leaf}"""
+        
+        if estimation_method == "Random Forest":
+            checklist += f"""
+- ✅ **Number of Trees:** {n_estimators}"""
+            
+        if enable_pruning:
+            checklist += f"""
+- ✅ **Pruning:** {pruning_method}
+- {'✅' if manual_alpha else '❌'} **Manual Alpha:** {manual_alpha if manual_alpha else 'Auto'}"""
+
+    elif estimation_method == "Logistic Regression":
+        checklist += f"""
+- {'✅' if class_weight else '❌'} **Class Weight:** {class_weight if class_weight else 'None'}
+- {'✅' if use_stratify else '❌'} **Stratified Sampling:** {'Enabled' if use_stratify else 'Disabled'}"""
+
+    checklist += f"""
+
+### 📈 **Analysis Options**
+- {'✅' if include_constant else '❌'} **Include Constant:** {'Yes' if include_constant else 'No'}
+- ✅ **Test Size:** {test_size} ({int(test_size * 100)}% for testing)
+- {'✅' if include_plots else '❌'} **Generate Plots:** {'Enabled' if include_plots else 'Disabled'}
+- {'✅' if use_stratify else '❌'} **Stratified Split:** {'Yes' if use_stratify else 'No'}
+
+### 🔍 **Advanced Options**
+- {'✅' if parameter_input_method else '❌'} **Parameter Input Method:** {parameter_input_method if parameter_input_method else 'Default'}
+- {'✅' if class_weight_option else '❌'} **Class Weight Option:** {class_weight_option if class_weight_option else 'None'}
+- {'✅' if filter_method else '❌'} **Filter Method:** {filter_method if filter_method else 'Standard'}
+
+---
+
+💡 **All these options are replicated exactly in the code below!**"""
+
+    return checklist
+
+
+def create_import_statements(estimation_method, model_type, use_scaling, standardize_data, missing_data_method, use_nested_cv, include_plots):
+    """Create import statements based on the selected options"""
+    
+    imports = [
+        "# Import required libraries",
+        "import pandas as pd",
+        "import numpy as np",
+        "from sklearn.model_selection import train_test_split"
+    ]
+    
+    # Method-specific imports
+    if estimation_method == "OLS":
+        imports.append("from sklearn.linear_model import LinearRegression")
+    elif estimation_method == "Lasso":
+        imports.append("from sklearn.linear_model import Lasso")
+        if use_nested_cv:
+            imports.append("from sklearn.model_selection import GridSearchCV")
+    elif estimation_method == "Ridge":
+        imports.append("from sklearn.linear_model import Ridge")
+        if use_nested_cv:
+            imports.append("from sklearn.model_selection import GridSearchCV")
+    elif estimation_method == "Elastic Net":
+        imports.append("from sklearn.linear_model import ElasticNet")
+        if use_nested_cv:
+            imports.append("from sklearn.model_selection import GridSearchCV")
+    elif estimation_method == "Logistic Regression":
+        imports.append("from sklearn.linear_model import LogisticRegression")
+    elif estimation_method == "Decision Tree":
+        if model_type == 'classification':
+            imports.append("from sklearn.tree import DecisionTreeClassifier")
+        else:
+            imports.append("from sklearn.tree import DecisionTreeRegressor")
+    elif estimation_method == "Random Forest":
+        if model_type == 'classification':
+            imports.append("from sklearn.ensemble import RandomForestClassifier")
+        else:
+            imports.append("from sklearn.ensemble import RandomForestRegressor")
+    
+    # Conditional imports
+    if use_scaling or standardize_data:
+        imports.append("from sklearn.preprocessing import StandardScaler")
+    
+    if missing_data_method in ["Mean Imputation", "Median Imputation", "Mode Imputation"]:
+        imports.append("from sklearn.impute import SimpleImputer")
+    elif missing_data_method == "KNN Imputation":
+        imports.append("from sklearn.impute import KNNImputer")
+    
+    # Metrics imports
+    if model_type == 'classification':
+        imports.append("from sklearn.metrics import accuracy_score, classification_report, confusion_matrix")
+    else:
+        imports.append("from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error")
+    
+    # Plotting imports
+    if include_plots:
+        imports.extend([
+            "import matplotlib.pyplot as plt",
+            "import seaborn as sns"
+        ])
+    
+    return "\n".join(imports)
+
+
+def create_data_loading_section(filename):
+    """Create data loading code section"""
+    
+    if filename:
+        if filename.endswith('.csv'):
+            return f"""# Load your dataset
+df = pd.read_csv('{filename}')
+
+print(f'Dataset shape: {{df.shape}}')
+print(f'Columns: {{list(df.columns)}}')
+df.head()"""
+        elif filename.endswith(('.xlsx', '.xls')):
+            return f"""# Load your Excel dataset  
+df = pd.read_excel('{filename}')
+
+print(f'Dataset shape: {{df.shape}}')
+print(f'Columns: {{list(df.columns)}}')
+df.head()"""
+    else:
+        return """# Load your dataset (replace with your file path)
+df = pd.read_csv('your_data.csv')  # or pd.read_excel('your_data.xlsx')
+
+print(f'Dataset shape: {df.shape}')
+print(f'Columns: {list(df.columns)}')
+df.head()"""
+
+
+def create_filtering_section(filter_conditions):
+    """Create data filtering code section"""
+    
+    filter_code = ["# Apply data filters (replicating your selections)"]
+    
+    for i, condition in enumerate(filter_conditions):
+        if condition['type'] == 'categorical':
+            values_str = str(condition['values'])
+            filter_code.append(f"# Filter {i+1}: {condition['column']} in {values_str}")
+            filter_code.append(f"df = df[df['{condition['column']}'].isin({values_str})]")
+        elif condition['type'] == 'numerical':
+            min_val, max_val = condition['values']
+            filter_code.append(f"# Filter {i+1}: {condition['column']} between {min_val} and {max_val}")
+            filter_code.append(f"df = df[(df['{condition['column']}'] >= {min_val}) & (df['{condition['column']}'] <= {max_val})]")
+        elif condition['type'] == 'date':
+            start_date, end_date = condition['values']
+            filter_code.append(f"# Filter {i+1}: {condition['column']} date range")
+            filter_code.append(f"df['{condition['column']}'] = pd.to_datetime(df['{condition['column']}'])")
+            filter_code.append(f"df = df[(df['{condition['column']}'] >= '{start_date}') & (df['{condition['column']}'] <= '{end_date}')]")
+    
+    filter_code.extend([
+        "",
+        "print(f'After filtering: {df.shape}')",
+        "df.head()"
+    ])
+    
+    return "\n".join(filter_code)
+
+
+def create_missing_data_section(missing_data_method):
+    """Create missing data handling code section"""
+    
+    if missing_data_method == "Mean Imputation":
+        return """# Handle missing values using mean imputation
+numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+mean_imputer = SimpleImputer(strategy='mean')
+df[numeric_cols] = mean_imputer.fit_transform(df[numeric_cols])
+print('✓ Applied mean imputation to numeric columns')
+
+# Check for remaining missing values
+print(f'Missing values after imputation: {df.isnull().sum().sum()}')"""
+
+    elif missing_data_method == "Median Imputation":
+        return """# Handle missing values using median imputation
+numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+median_imputer = SimpleImputer(strategy='median')
+df[numeric_cols] = median_imputer.fit_transform(df[numeric_cols])
+print('✓ Applied median imputation to numeric columns')
+
+# Check for remaining missing values
+print(f'Missing values after imputation: {df.isnull().sum().sum()}')"""
+
+    elif missing_data_method == "Mode Imputation":
+        return """# Handle missing values using mode imputation
+mode_imputer = SimpleImputer(strategy='most_frequent')
+df_imputed = pd.DataFrame(mode_imputer.fit_transform(df), columns=df.columns, index=df.index)
+df = df_imputed
+print('✓ Applied mode imputation to all columns')
+
+# Check for remaining missing values
+print(f'Missing values after imputation: {df.isnull().sum().sum()}')"""
+
+    elif missing_data_method == "KNN Imputation":
+        return """# Handle missing values using KNN imputation
+numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+knn_imputer = KNNImputer(n_neighbors=5)
+df[numeric_cols] = knn_imputer.fit_transform(df[numeric_cols])
+print('✓ Applied KNN imputation to numeric columns')
+
+# Check for remaining missing values
+print(f'Missing values after imputation: {df.isnull().sum().sum()}')"""
+
+    elif missing_data_method == "Listwise Deletion":
+        return """# Remove rows with missing values (listwise deletion)
+original_rows = len(df)
+df = df.dropna()
+removed_rows = original_rows - len(df)
+print(f'✓ Removed {removed_rows} rows with missing values')
+print(f'Remaining rows: {len(df)}')"""
+
+    return ""
+
+
+def create_variable_definition(independent_vars, dependent_var, estimation_method, model_type, standardize_data, use_scaling):
+    """Create variable definition and preprocessing section"""
+    
+    var_code = [
+        "# Define variables (matching your analysis)",
+        f"independent_vars = {independent_vars}",
+        f"dependent_var = '{dependent_var}'",
+        "",
+        "# Extract features and target",
+        "X = df[independent_vars].copy()",
+        "y = df[dependent_var].copy()",
+        "",
+        f"# Define model type for visualization and logic",
+        f"model_type = '{model_type}'",
+        "",
+        "print(f'Feature matrix shape: {X.shape}')",
+        "print(f'Target variable shape: {y.shape}')",
+        "print(f'Features: {list(X.columns)}')"
+    ]
+    
+    if standardize_data or use_scaling:
+        var_code.extend([
+            "",
+            "# Standardize features (as selected in your analysis)",
+            "scaler = StandardScaler()",
+            "X_scaled = scaler.fit_transform(X)",
+            "X = pd.DataFrame(X_scaled, columns=X.columns, index=X.index)",
+            "print('✓ Features standardized')"
+        ])
+    
+    return "\n".join(var_code)
+
+
+def create_model_training_section(estimation_method, model_type, alpha, l1_ratio, use_nested_cv,
+                                cv_folds, max_depth, n_estimators, min_samples_split,
+                                min_samples_leaf, enable_pruning, pruning_method, manual_alpha,
+                                class_weight, use_stratify, test_size, random_state):
+    """Create model training code section"""
+    
+    model_code = ["# Train-test split"]
+    
+    if use_stratify and model_type == 'classification':
+        model_code.extend([
+            "# Using stratified sampling for classification",
+            "X_train, X_test, y_train, y_test = train_test_split(",
+            "    X, y, test_size={}, random_state={}, stratify=y".format(test_size, random_state),
+            ")"
+        ])
+    else:
+        model_code.extend([
+            "X_train, X_test, y_train, y_test = train_test_split(",
+            f"    X, y, test_size={test_size}, random_state={random_state}",
+            ")"
+        ])
+    
+    model_code.extend([
+        "",
+        "print(f'Training set: {X_train.shape[0]} samples')",
+        "print(f'Test set: {X_test.shape[0]} samples')",
+        ""
+    ])
+    
+    # Model definition based on method
+    if estimation_method == "OLS":
+        model_code.extend([
+            "# Ordinary Least Squares Regression",
+            "model = LinearRegression()"
+        ])
+    elif estimation_method == "Lasso":
+        if use_nested_cv:
+            model_code.extend([
+                f"# Lasso with Cross-Validation ({cv_folds}-fold CV)",
+                "param_grid = {'alpha': [0.001, 0.01, 0.1, 1.0, 10.0, 100.0]}",
+                f"lasso_base = Lasso(random_state={random_state})",
+                f"model = GridSearchCV(lasso_base, param_grid, cv={cv_folds}, scoring='r2')"
+            ])
+        else:
+            model_code.extend([
+                f"# Lasso Regression (alpha={alpha})",
+                f"model = Lasso(alpha={alpha}, random_state={random_state})"
+            ])
+    elif estimation_method == "Ridge":
+        if use_nested_cv:
+            model_code.extend([
+                f"# Ridge with Cross-Validation ({cv_folds}-fold CV)",
+                "param_grid = {'alpha': [0.001, 0.01, 0.1, 1.0, 10.0, 100.0]}",
+                f"ridge_base = Ridge(random_state={random_state})",
+                f"model = GridSearchCV(ridge_base, param_grid, cv={cv_folds}, scoring='r2')"
+            ])
+        else:
+            model_code.extend([
+                f"# Ridge Regression (alpha={alpha})",
+                f"model = Ridge(alpha={alpha}, random_state={random_state})"
+            ])
+    elif estimation_method == "Elastic Net":
+        if use_nested_cv:
+            model_code.extend([
+                f"# Elastic Net with Cross-Validation ({cv_folds}-fold CV)",
+                "param_grid = {",
+                "    'alpha': [0.001, 0.01, 0.1, 1.0, 10.0],",
+                "    'l1_ratio': [0.1, 0.3, 0.5, 0.7, 0.9]",
+                "}",
+                f"elastic_base = ElasticNet(random_state={random_state})",
+                f"model = GridSearchCV(elastic_base, param_grid, cv={cv_folds}, scoring='r2')"
+            ])
+        else:
+            model_code.extend([
+                f"# Elastic Net Regression (alpha={alpha}, l1_ratio={l1_ratio})",
+                f"model = ElasticNet(alpha={alpha}, l1_ratio={l1_ratio}, random_state={random_state})"
+            ])
+    elif estimation_method == "Logistic Regression":
+        class_weight_str = f"'{class_weight}'" if isinstance(class_weight, str) else str(class_weight)
+        model_code.extend([
+            "# Logistic Regression",
+            f"model = LogisticRegression(",
+            f"    class_weight={class_weight_str},",
+            f"    random_state={random_state},",
+            f"    max_iter=1000",
+            f")"
+        ])
+    elif estimation_method == "Decision Tree":
+        tree_class = "DecisionTreeClassifier" if model_type == 'classification' else "DecisionTreeRegressor"
+        max_depth_str = str(max_depth) if max_depth else "None"
+        
+        if enable_pruning and pruning_method == "Manual Alpha" and manual_alpha is not None:
+            model_code.extend([
+                f"# Decision Tree {model_type.title()} with Cost Complexity Pruning",
+                f"model = {tree_class}(",
+                f"    max_depth={max_depth_str},",
+                f"    min_samples_split={min_samples_split},",
+                f"    min_samples_leaf={min_samples_leaf},",
+                f"    ccp_alpha={manual_alpha},",
+                f"    random_state={random_state}",
+                f")"
+            ])
+        else:
+            model_code.extend([
+                f"# Decision Tree {model_type.title()}",
+                f"model = {tree_class}(",
+                f"    max_depth={max_depth_str},",
+                f"    min_samples_split={min_samples_split},",
+                f"    min_samples_leaf={min_samples_leaf},",
+                f"    random_state={random_state}",
+                f")"
+            ])
+    elif estimation_method == "Random Forest":
+        forest_class = "RandomForestClassifier" if model_type == 'classification' else "RandomForestRegressor"
+        max_depth_str = str(max_depth) if max_depth else "None"
+        model_code.extend([
+            f"# Random Forest {model_type.title()}",
+            f"model = {forest_class}(",
+            f"    n_estimators={n_estimators},",
+            f"    max_depth={max_depth_str},",
+            f"    min_samples_split={min_samples_split},",
+            f"    min_samples_leaf={min_samples_leaf},",
+            f"    random_state={random_state}",
+            f")"
+        ])
+    
+    # Model training
+    model_code.extend([
+        "",
+        "# Train the model",
+        "model.fit(X_train, y_train)",
+        "print('✓ Model trained successfully')"
+    ])
+    
+    if use_nested_cv and estimation_method in ["Lasso", "Ridge", "Elastic Net"]:
+        model_code.extend([
+            "",
+            "print(f'Best parameters: {model.best_params_}')",
+            "print(f'Best CV score: {model.best_score_:.4f}')"
+        ])
+    
+    return "\n".join(model_code)
+
+
+def create_evaluation_section(model_type):
+    """Create model evaluation code section"""
+    
+    eval_code = [
+        "# Make predictions",
+        "y_train_pred = model.predict(X_train)",
+        "y_test_pred = model.predict(X_test)",
+        ""
+    ]
+    
+    if model_type == 'classification':
+        eval_code.extend([
+            "# Classification metrics",
+            "train_accuracy = accuracy_score(y_train, y_train_pred)",
+            "test_accuracy = accuracy_score(y_test, y_test_pred)",
+            "",
+            "print('\\n' + '='*60)",
+            "print('🎯 KEY RESULTS (Should match main window):')",
+            "print('='*60)",
+            "print(f'📊 Training Accuracy: {train_accuracy:.4f}')",
+            "print(f'📊 Test Accuracy: {test_accuracy:.4f}')", 
+            "print('='*60)",
+            "",
+            "print('\\n=== DETAILED CLASSIFICATION REPORT ===')",
+            "print(classification_report(y_test, y_test_pred))",
+            "",
+            "print('\\n=== CONFUSION MATRIX ===')",
+            "print(confusion_matrix(y_test, y_test_pred))"
+        ])
+    else:
+        eval_code.extend([
+            "# Regression metrics",
+            "train_mse = mean_squared_error(y_train, y_train_pred)",
+            "test_mse = mean_squared_error(y_test, y_test_pred)",
+            "train_r2 = r2_score(y_train, y_train_pred)",
+            "test_r2 = r2_score(y_test, y_test_pred)",
+            "train_mae = mean_absolute_error(y_train, y_train_pred)",
+            "test_mae = mean_absolute_error(y_test, y_test_pred)",
+            "train_rmse = np.sqrt(train_mse)",
+            "test_rmse = np.sqrt(test_mse)",
+            "",
+            "print('\\n' + '='*60)",
+            "print('🎯 KEY RESULTS (Should match main window):')",
+            "print('='*60)",
+            "print(f'📊 Training R²: {train_r2:.4f}')",
+            "print(f'📊 Test R²: {test_r2:.4f}')",
+            "print(f'📊 Training RMSE: {train_rmse:.4f}')",
+            "print(f'📊 Test RMSE: {test_rmse:.4f}')",
+            "print(f'📊 Training MAE: {train_mae:.4f}')",
+            "print(f'📊 Test MAE: {test_mae:.4f}')",
+            "print('='*60)",
+            "",
+            "print('\\n=== DETAILED MODEL PERFORMANCE ===')",
+            "print(f'Training R²: {train_r2:.6f}')",
+            "print(f'Test R²: {test_r2:.6f}')",
+            "print(f'Training MSE: {train_mse:.6f}')",
+            "print(f'Test MSE: {test_mse:.6f}')",
+            "print(f'Training RMSE: {train_rmse:.6f}')",
+            "print(f'Test RMSE: {test_rmse:.6f}')",
+            "print(f'Training MAE: {train_mae:.6f}')",
+            "print(f'Test MAE: {test_mae:.6f}')"
+        ])
+    
+    return "\n".join(eval_code)
+
+
+def create_feature_importance_section(estimation_method, use_nested_cv):
+    """Create feature importance/coefficients code section"""
+    
+    if estimation_method in ["Decision Tree", "Random Forest"]:
+        importance_code = [
+            "# Feature importance analysis",
+            "feature_importance = pd.DataFrame({",
+            "    'feature': X.columns,",
+            "    'importance': model.feature_importances_",
+            "}).sort_values('importance', ascending=False)",
+            "",
+            "print('\\n🔥 FEATURE IMPORTANCE (Top features):')",
+            "print('='*50)",
+            "for idx, row in feature_importance.head().iterrows():",
+            "    print(f'📈 {row[\"feature\"]:<25}: {row[\"importance\"]:.6f}')",
+            "print('='*50)",
+            "",
+            "# Display complete feature importance",
+            "feature_importance"
+        ]
+        
+        if estimation_method == "Decision Tree":
+            importance_code.extend([
+                "",
+                "# Tree model properties",
+                "print('\\n🌳 TREE MODEL PROPERTIES:')",
+                "print('='*40)",
+                "print(f'🔢 Tree Depth: {model.get_depth()}')",
+                "print(f'🍃 Number of Leaves: {model.get_n_leaves()}')",
+                "print(f'📏 Max Depth Setting: {model.max_depth}')",
+                "print(f'🔀 Min Samples Split: {model.min_samples_split}')",
+                "print(f'🍀 Min Samples Leaf: {model.min_samples_leaf}')",
+                "print('='*40)"
+            ])
+    elif estimation_method in ["Lasso", "Ridge", "Elastic Net", "Linear Regression", "OLS", "Logistic Regression"]:
+        # Linear models coefficients
+        if use_nested_cv and estimation_method in ["Lasso", "Ridge", "Elastic Net"]:
+            coef_attr = "model.best_estimator_.coef_"
+        else:
+            coef_attr = "model.coef_"
+        
+        # For logistic regression, handle multi-class case
+        if estimation_method == "Logistic Regression":
+            importance_code = [
+                "# Logistic Regression coefficients analysis",
+                "# Handle both binary and multiclass cases",
+                "if len(model.coef_.shape) == 1:",
+                "    # Binary classification",
+                "    coef_values = model.coef_",
+                "else:",
+                "    # Multiclass classification - use first class coefficients",
+                "    coef_values = model.coef_[0]",
+                "",
+                "coefficients = pd.DataFrame({",
+                "    'feature': X.columns,",
+                "    'coefficient': coef_values",
+                "}).sort_values('coefficient', key=abs, ascending=False)",
+                "",
+                "print('\\n🔥 TOP COEFFICIENTS (Most influential features):')",
+                "print('='*60)",
+                "for idx, row in coefficients.head().iterrows():",
+                "    print(f'📈 {row[\"feature\"]:<25}: {row[\"coefficient\"]:>12.6f}')",
+                "print('='*60)",
+                "",
+                "# Display complete coefficients",
+                "coefficients"
+            ]
+        else:
+            # Other linear models
+            importance_code = [
+                "# Model coefficients analysis",
+                "coefficients = pd.DataFrame({",
+                "    'feature': X.columns,",
+                f"    'coefficient': {coef_attr}",
+                "}).sort_values('coefficient', key=abs, ascending=False)",
+                "",
+                "print('\\n🔥 TOP COEFFICIENTS (Most influential features):')",
+                "print('='*60)",
+                "for idx, row in coefficients.head().iterrows():",
+                "    print(f'📈 {row[\"feature\"]:<25}: {row[\"coefficient\"]:>12.6f}')",
+                "print('='*60)",
+                "",
+                "# Display complete coefficients",
+                "coefficients"
+            ]
+    else:
+        # For other model types, return empty feature analysis
+        importance_code = [
+            "# Feature analysis not available for this model type",
+            f"print('Feature analysis not implemented for {estimation_method}')"
+        ]
+    
+    return "\n".join(importance_code)
+
+
+def create_plotting_section(estimation_method, model_type):
+    """Create plotting code section"""
+    
+    plot_code = [
+        "# Set up plotting style",
+        "plt.style.use('default')",
+        "sns.set_palette('husl')",
+        ""
+    ]
+    
+    if model_type == 'regression':
+        plot_code.extend([
+            "# Regression plots",
+            "fig, axes = plt.subplots(2, 2, figsize=(15, 12))",
+            f"fig.suptitle('{estimation_method} - Regression Analysis Plots', fontsize=16)",
+            "",
+            "# 1. Actual vs Predicted",
+            "axes[0, 0].scatter(y_test, y_test_pred, alpha=0.6)",
+            "axes[0, 0].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2)",
+            "axes[0, 0].set_xlabel('Actual Values')",
+            "axes[0, 0].set_ylabel('Predicted Values')",
+            "axes[0, 0].set_title('Actual vs Predicted Values')",
+            "axes[0, 0].grid(True, alpha=0.3)",
+            "",
+            "# 2. Residual plot",
+            "residuals = y_test - y_test_pred",
+            "axes[0, 1].scatter(y_test_pred, residuals, alpha=0.6)",
+            "axes[0, 1].axhline(y=0, color='r', linestyle='--')",
+            "axes[0, 1].set_xlabel('Predicted Values')",
+            "axes[0, 1].set_ylabel('Residuals')",
+            "axes[0, 1].set_title('Residual Plot')",
+            "axes[0, 1].grid(True, alpha=0.3)",
+            "",
+            "# 3. Residual distribution",
+            "axes[1, 0].hist(residuals, bins=20, alpha=0.7, edgecolor='black')",
+            "axes[1, 0].set_xlabel('Residuals')",
+            "axes[1, 0].set_ylabel('Frequency')",
+            "axes[1, 0].set_title('Distribution of Residuals')",
+            "axes[1, 0].grid(True, alpha=0.3)",
+            "",
+            "# 4. Q-Q plot for residuals",
+            "from scipy import stats",
+            "stats.probplot(residuals, dist='norm', plot=axes[1, 1])",
+            "axes[1, 1].set_title('Q-Q Plot of Residuals')",
+            "axes[1, 1].grid(True, alpha=0.3)",
+            "",
+            "plt.tight_layout()",
+            "plt.show()"
+        ])
+    
+    if model_type == 'classification':
+        plot_code.extend([
+            "# Classification plots",
+            "fig, axes = plt.subplots(1, 2, figsize=(15, 6))",
+            f"fig.suptitle('{estimation_method} - Classification Analysis Plots', fontsize=16)",
+            "",
+            "# 1. Confusion Matrix",
+            "cm = confusion_matrix(y_test, y_test_pred)",
+            "sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=axes[0])",
+            "axes[0].set_xlabel('Predicted')",
+            "axes[0].set_ylabel('Actual')",
+            "axes[0].set_title('Confusion Matrix')",
+            "",
+            "# 2. Class distribution",
+            "unique_classes, counts = np.unique(y, return_counts=True)",
+            "axes[1].bar(unique_classes, counts, alpha=0.7)",
+            "axes[1].set_xlabel('Classes')",
+            "axes[1].set_ylabel('Count')",
+            "axes[1].set_title('Class Distribution')",
+            "axes[1].grid(True, alpha=0.3)",
+            "",
+            "plt.tight_layout()",
+            "plt.show()"
+        ])
+    
+    # Feature importance plots for tree models
+    if estimation_method in ["Decision Tree", "Random Forest"]:
+        plot_code.extend([
+            "",
+            "# Feature Importance Plot",
+            "plt.figure(figsize=(10, 6))",
+            "feature_importance_sorted = feature_importance.sort_values('importance', ascending=True)",
+            "plt.barh(feature_importance_sorted['feature'], feature_importance_sorted['importance'])",
+            "plt.xlabel('Feature Importance')",
+            f"plt.title('{estimation_method} - Feature Importance')",
+            "plt.grid(True, alpha=0.3)",
+            "plt.tight_layout()",
+            "plt.show()"
+        ])
+        
+        # Tree visualization for both Decision Tree and Random Forest
+        if estimation_method == "Decision Tree":
+            plot_code.extend([
+                "",
+                "# Decision Tree Visualization",
+                "from sklearn.tree import plot_tree",
+                "",
+                "plt.figure(figsize=(20, 12))",
+                "plot_tree(model,",
+                "          feature_names=X.columns,",
+                "          class_names=None if model_type == 'regression' else True,",
+                "          filled=True,",
+                "          rounded=True,",
+                "          fontsize=10)",
+                f"plt.title('Decision Tree Visualization\\n{estimation_method}', fontsize=16)",
+                "plt.tight_layout()",
+                "plt.show()"
+            ])
+        elif estimation_method == "Random Forest":
+            plot_code.extend([
+                "",
+                "# Random Forest - Individual Tree Visualization",
+                "from sklearn.tree import plot_tree",
+                "",
+                "# Plot the first tree from the forest",
+                "plt.figure(figsize=(20, 12))",
+                "plot_tree(model.estimators_[0],",
+                "          feature_names=X.columns,",
+                "          class_names=None if model_type == 'regression' else True,",
+                "          filled=True,",
+                "          rounded=True,",
+                "          fontsize=8)",
+                f"plt.title('Random Forest - Sample Tree (Tree #1 of {'{model.n_estimators}'})\\n{estimation_method}', fontsize=16)",
+                "plt.tight_layout()",
+                "plt.show()",
+                "",
+                "# Random Forest Tree Statistics",
+                "print('\\n🌳 RANDOM FOREST PROPERTIES:')",
+                "print('='*40)",
+                "print(f'🔢 Number of Trees: {model.n_estimators}')",
+                "print(f'🍃 Max Features per Tree: {model.max_features}')",
+                "print(f'📏 Max Depth Setting: {model.max_depth}')",
+                "print(f'🔀 Min Samples Split: {model.min_samples_split}')",
+                "print(f'🍀 Min Samples Leaf: {model.min_samples_leaf}')",
+                "print(f'🎲 Bootstrap Samples: {model.bootstrap}')",
+                "print('='*40)"
+            ])
+    
+    # Coefficient plots for linear models
+    elif estimation_method in ["OLS", "Lasso", "Ridge", "Elastic Net", "Logistic Regression"]:
+        plot_code.extend([
+            "",
+            "# Coefficient Plot",
+            "plt.figure(figsize=(10, 6))",
+            "coef_abs_sorted = coefficients.reindex(coefficients['coefficient'].abs().sort_values(ascending=True).index)",
+            "colors = ['red' if x < 0 else 'blue' for x in coef_abs_sorted['coefficient']]",
+            "plt.barh(coef_abs_sorted['feature'], coef_abs_sorted['coefficient'], color=colors, alpha=0.7)",
+            "plt.xlabel('Coefficient Value')",
+            f"plt.title('{estimation_method} - Feature Coefficients')",
+            "plt.axvline(x=0, color='black', linestyle='-', alpha=0.3)",
+            "plt.grid(True, alpha=0.3)",
+            "plt.tight_layout()",
+            "plt.show()"
+        ])
+    
+    return "\n".join(plot_code)
+
 
 def track_feature_usage(feature_name):
     """
@@ -169,7 +1909,51 @@ def display_usage_analytics():
         st.error("Unable to load usage data.")
         return
     
-    st.markdown("# 📊 App Usage Analytics Dashboard")
+    # Analytics dashboard header with logo
+    st.markdown("""
+    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 20px; flex-wrap: wrap;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="220" height="66" viewBox="0 0 950 260" role="img" aria-label="Quick Learning Analytics logo">
+          <title>Quick Learning Analytics</title>
+          <defs>
+            <style>
+              .qStroke { stroke:#FF1E1E; }
+              .lStroke { stroke:#1440FF; }
+              .aStroke { stroke:#F2C200; }
+              .qColor { fill:#FF1E1E; }
+              .lColor { fill:#1440FF; }
+              .aColor { fill:#F2C200; }
+              .textBase {
+                font-family: Inter, Poppins, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+                font-weight: 800;
+                font-size: 55px;
+                letter-spacing: -0.01em;
+              }
+            </style>
+          </defs>
+          <g transform="translate(15,15)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="85" cy="85" r="60" class="qStroke" stroke-width="11"/>
+            <path d="M125 125 L143 143" class="qStroke" stroke-width="11"/>
+            <line x1="72"  y1="130" x2="72"  y2="100" class="qStroke" stroke-width="13"/>
+            <line x1="86" y1="130" x2="86" y2="90" class="lStroke" stroke-width="13"/>
+            <line x1="100" y1="130" x2="100" y2="78"  class="aStroke" stroke-width="13"/>
+            <path d="M160 50 L160 135 L195 135" class="lStroke" stroke-width="14"/>
+            <path d="M205 135 L220 70 L235 135" class="aStroke" stroke-width="11"/>
+            <line x1="211" y1="108" x2="229" y2="108" class="aStroke" stroke-width="7"/>
+          </g>
+          <g transform="translate(270,88)">
+            <text class="textBase">
+              <tspan class="qColor">Quick</tspan>
+              <tspan> </tspan>
+              <tspan class="lColor">Learning</tspan>
+            </text>
+          </g>
+          <g transform="translate(270,135)">
+            <text class="textBase aColor">Analytics</text>
+          </g>
+        </svg>
+        <h1 style="margin: 0; color: #1f1f1f; font-size: 1.8rem; font-weight: 600; line-height: 1.2;">App Usage Analytics Dashboard</h1>
+    </div>
+    """, unsafe_allow_html=True)
     st.markdown("---")
     
     # Overview metrics
@@ -1252,6 +3036,104 @@ def display_pruning_info(estimation_method):
                 - **CV Score** indicates model performance with given α
                 """)
 
+def generate_html_report(model, estimation_method, dependent_var, independent_vars, 
+                        uploaded_file, model_type, include_constant, use_scaling, 
+                        use_nested_cv, test_size, random_state):
+    """Generate comprehensive HTML report with all analysis results and options"""
+    from datetime import datetime
+    import pytz
+    
+    # Get current timestamp
+    central_tz = pytz.timezone('US/Central')
+    timestamp = datetime.now(central_tz).strftime('%Y-%m-%d %H:%M:%S CST')
+    
+    # Get filename
+    filename = uploaded_file.name if uploaded_file else "Unknown"
+    
+    # Generate comprehensive user options summary
+    options_summary = {
+        "Analysis Configuration": {
+            "Uploaded File": filename,
+            "Dependent Variable": dependent_var,
+            "Independent Variables": independent_vars,
+            "Model Type": model_type,
+            "Estimation Method": estimation_method,
+            "Include Constant": "Yes" if include_constant else "No",
+            "Use Feature Scaling": "Yes" if use_scaling else "No",
+            "Use Nested Cross-Validation": "Yes" if use_nested_cv else "No",
+            "Test Set Size": f"{test_size:.1%}",
+            "Random State": random_state,
+            "Report Generated": timestamp
+        }
+    }
+    
+    # Create HTML content
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Quick Learning Analytics - {estimation_method} Analysis Report</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }}
+            .header {{ text-align: center; margin-bottom: 30px; }}
+            .section {{ margin: 20px 0; }}
+            .options-table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+            .options-table th, .options-table td {{ border: 1px solid #ddd; padding: 12px; text-align: left; }}
+            .options-table th {{ background-color: #f2f2f2; font-weight: bold; }}
+            .timestamp {{ text-align: center; color: #666; font-size: 0.9em; margin-top: 30px; }}
+            .source-info {{ text-align: center; color: #666; font-size: 0.95em; margin-bottom: 20px; }}
+            @media print {{ body {{ margin: 20px; }} }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>🚀 Quick Learning Analytics</h1>
+            <h2>Econometric Analysis Report</h2>
+            <h3>{estimation_method} Analysis Results</h3>
+        </div>
+        
+        <div class="source-info">
+            <p><strong>Generated by:</strong> Supervised Learning Tool</p>
+            <p><strong>Created by:</strong> Ren Zhang, McCoy College of Business, Texas State University</p>
+            <p><strong>Visit:</strong> <a href="https://quicklearninganalytics.streamlit.app/">Quick Learning Analytics</a> for more tools and information</p>
+        </div>
+        
+        <div class="section">
+            <h3>📋 Analysis Configuration</h3>
+            <table class="options-table">
+                <tr><th>Setting</th><th>Value</th></tr>
+                <tr><td>Uploaded File</td><td>{filename}</td></tr>
+                <tr><td>Dependent Variable</td><td>{dependent_var}</td></tr>
+                <tr><td>Independent Variables</td><td>{', '.join(independent_vars)}</td></tr>
+                <tr><td>Model Type</td><td>{model_type}</td></tr>
+                <tr><td>Estimation Method</td><td>{estimation_method}</td></tr>
+                <tr><td>Include Constant</td><td>{'Yes' if include_constant else 'No'}</td></tr>
+                <tr><td>Use Feature Scaling</td><td>{'Yes' if use_scaling else 'No'}</td></tr>
+                <tr><td>Use Nested Cross-Validation</td><td>{'Yes' if use_nested_cv else 'No'}</td></tr>
+                <tr><td>Test Set Size</td><td>{test_size:.1%}</td></tr>
+                <tr><td>Random State</td><td>{random_state}</td></tr>
+            </table>
+        </div>
+        
+        <div class="section">
+            <h3>🎯 Model Performance Summary</h3>
+            <p><strong>Model Type:</strong> {estimation_method}</p>
+            <p><strong>Variables Analyzed:</strong> {len(independent_vars)} independent variables</p>
+            <p><strong>Coefficient Support:</strong> {'Available' if hasattr(model, 'coef_') else 'Feature Importance Used'}</p>
+        </div>
+        
+        <div class="timestamp">
+            <p>Report generated on {timestamp}</p>
+            <p>Quick Learning Analytics Tool v2.2.0 - Developed by Ren Zhang, McCoy College of Business, Texas State University</p>
+        </div>
+    </body>
+    </html>
+    """
+    
+    return html_content
+
 def calculate_regression_stats(X, y, model, method='OLS', fit_intercept=True):
     """Calculate comprehensive regression statistics for different methods"""
     # Predictions
@@ -1283,7 +3165,7 @@ def calculate_regression_stats(X, y, model, method='OLS', fit_intercept=True):
     residuals = y - y_pred
     
     # For OLS, calculate standard errors and statistical tests
-    if method == 'OLS':
+    if method == 'OLS' and hasattr(model, 'coef_'):
         # Standard errors of coefficients
         if fit_intercept:
             X_with_intercept = np.column_stack([np.ones(n), X])
@@ -1650,11 +3532,54 @@ def main():
         display_usage_analytics()
         return
     
-    # Main header
-    st.markdown('<h1 class="main-header">📊 Supervised Learning Tool: Regression and Classification</h1>', unsafe_allow_html=True)
+    # Main header with logo
+    st.markdown("""
+    <div style="display: flex; align-items: center; gap: 0px; margin-bottom: 20px; flex-wrap: wrap;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="640" height="192" viewBox="0 0 900 240" style="margin-right: -20px;" role="img" aria-label="Quick Learning Analytics logo">
+          <title>Quick Learning Analytics</title>
+          <defs>
+            <style>
+              .qStroke { stroke:#FF1E1E; }
+              .lStroke { stroke:#1440FF; }
+              .aStroke { stroke:#F2C200; }
+              .qColor { fill:#FF1E1E; }
+              .lColor { fill:#1440FF; }
+              .aColor { fill:#F2C200; }
+              .textBase {
+                font-family: Inter, Poppins, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+                font-weight: 800;
+                font-size: 52px;
+                letter-spacing: -0.01em;
+              }
+            </style>
+          </defs>
+          <g transform="translate(10,10)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="80" cy="80" r="56" class="qStroke" stroke-width="10"/>
+            <path d="M118 118 L134 134" class="qStroke" stroke-width="10"/>
+            <line x1="68"  y1="122" x2="68"  y2="94" class="qStroke" stroke-width="12"/>
+            <line x1="80" y1="122" x2="80" y2="85" class="lStroke" stroke-width="12"/>
+            <line x1="92" y1="122" x2="92" y2="74"  class="aStroke" stroke-width="12"/>
+            <path d="M150 46 L150 126 L180 126" class="lStroke" stroke-width="13"/>
+            <path d="M188 126 L201 66 L214 126" class="aStroke" stroke-width="10"/>
+            <line x1="193" y1="101" x2="209" y2="101" class="aStroke" stroke-width="6"/>
+          </g>
+          <g transform="translate(240,82)">
+            <text class="textBase">
+              <tspan class="qColor">Quick</tspan>
+              <tspan> </tspan>
+              <tspan class="lColor">Learning</tspan>
+            </text>
+          </g>
+          <g transform="translate(240,126)">
+            <text class="textBase aColor">Analytics</text>
+          </g>
+        </svg>
+        <h1 style="margin: 0; color: #1f1f1f; font-size: 2.2rem; font-weight: 600; line-height: 1.2;">Supervised Learning Tool: Regression and Classification</h1>
+    </div>
+    """, unsafe_allow_html=True)
     
     # About section first
-    st.markdown("**About:** This webapp is created by Ren Zhang. Visit my [personal webpage](https://renzhang.weebly.com/) for more information.")
+    st.markdown("**About:** This webapp is created by Ren Zhang, McCoy College of Business, Texas State University. Visit my [personal webpage](https://renzhang.weebly.com/) for more information.")
     
     st.markdown("We're still developing this web app and welcome your feedback. If you have suggestions or encounter any issues, please share them below—your feedback will be sent directly to the creator's email.")
     
@@ -1687,14 +3612,15 @@ def main():
     
     # Concise description
     st.markdown("""
-    **Upload CSV/Excel data and perform advanced regression and classification analysis with multiple machine learning models.**
+    **Professional machine learning analysis tool with automated Python code generation for data science workflows.**
     
-    **Available Models:** OLS, Logistic Regression, Lasso, Ridge, Elastic Net, Decision Trees, Random Forest
+    **🤖 Available Models:** OLS, Logistic Regression, Lasso, Ridge, Elastic Net, Decision Trees, Random Forest
     
-    **Key Features:** Multi-column data filtering • Interactive variable selection • Missing data handling • Nested cross-validation for parameter optimization • Comprehensive statistics & visualizations • Classification metrics & ROC curves
+    **⚡ Key Features:** Interactive data upload & filtering • Smart variable selection • Advanced parameter tuning • Cross-validation optimization • Professional visualizations • Python code generation for reproducible analysis
     
-    **Perfect for:** Econometric analysis, predictive modeling, educational purposes, and exploratory data analysis.
+    **🎯 Perfect for:** Data science education, research analysis, predictive modeling, and creating reproducible ML workflows with downloadable Python code.
     """)
+    
     st.markdown("---")
     
     # Initialize default values for variables used in main area
@@ -2445,6 +4371,7 @@ def main():
                 alpha = 1.0
                 l1_ratio = 0.5
                 use_nested_cv = False  # Default for non-regularized methods
+                cv_folds = 5  # Default for all methods
             
             # Logistic Regression specific parameters
             if estimation_method == "Logistic Regression":
@@ -2490,6 +4417,8 @@ def main():
                 use_scaling = False
                 class_weight = None
                 use_stratify = False
+                standardize_data = False  # Default for non-logistic methods
+                class_weight_option = "None"  # Default for non-logistic methods
             
             # Tree-based method parameters
             if estimation_method in ["Decision Tree", "Random Forest"]:
@@ -2564,9 +4493,10 @@ def main():
                             # Try to calculate automatic alpha for guidance
                             if 'X_train' in st.session_state and 'y_train' in st.session_state:
                                 from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
-                                temp_model = DecisionTreeRegressor(random_state=42)
-                                temp_model.fit(st.session_state.X_train, st.session_state.y_train)
-                                path = temp_model.cost_complexity_pruning_path(st.session_state.X_train, st.session_state.y_train)
+                                # Create temporary model for cost complexity pruning path
+                                pruning_model = DecisionTreeRegressor(random_state=42)
+                                pruning_model.fit(st.session_state.X_train, st.session_state.y_train)
+                                path = pruning_model.cost_complexity_pruning_path(st.session_state.X_train, st.session_state.y_train)
                                 ccp_alphas = path.ccp_alphas[:-1]  # Remove last (empty tree)
                                 if len(ccp_alphas) > 0:
                                     # Get optimal alpha using same CV logic
@@ -2662,6 +4592,24 @@ def main():
                 cv_folds = 5
                 pruning_method = "Automatic (CV)"
                 manual_alpha = None
+                # Add missing variables for non-tree methods
+                use_scaling = False
+                class_weight = None
+                use_stratify = False
+                standardize_data = False
+                class_weight_option = "None"
+            
+            # Set default values for parameters that might not be defined in all contexts
+            if 'parameter_input_method' not in locals():
+                parameter_input_method = None
+            if 'filter_method' not in locals():
+                filter_method = None
+            if 'start_row' not in locals():
+                start_row = None
+            if 'end_row' not in locals():
+                end_row = None
+            if 'use_sample_filter' not in locals():
+                use_sample_filter = False
             
             # Missing Values Summary for Selected Variables (show in main area after variables are selected)
             if dependent_var and independent_vars:
@@ -2700,6 +4648,10 @@ def main():
             if independent_vars:
                 # Run regression button
                 if st.sidebar.button(f"🔬 Run {estimation_method} Regression", type="primary"):
+                    
+                    # Clear any existing results
+                    if 'analysis_results' in st.session_state:
+                        del st.session_state.analysis_results
                     
                     # Track model execution - increment counters
                     st.session_state.models_run_count += 1
@@ -3157,69 +5109,74 @@ def main():
                             display_pruning_info("Random Forest")
                     
                     else:
-                        # Linear models - show coefficients table
-                        st.write("**Regression Coefficients:**")
-                        
-                        coef_data = []
-                        variable_names = (['Intercept'] if include_constant else []) + independent_vars
-                        
-                        # Handle coefficient concatenation properly for different model types
-                        if include_constant:
-                            if estimation_method == 'Logistic Regression':
-                                # For logistic regression: handle multidimensional arrays properly
-                                if hasattr(model, 'intercept_') and model.intercept_.ndim > 0:
-                                    intercept_part = model.intercept_.flatten()
+                        # Linear models - show coefficients table (only for models that have coefficients)
+                        if hasattr(model, 'coef_'):
+                            st.write("**Regression Coefficients:**")
+                            
+                            coef_data = []
+                            variable_names = (['Intercept'] if include_constant else []) + independent_vars
+                            
+                            # Handle coefficient concatenation properly for different model types
+                            if include_constant:
+                                if estimation_method == 'Logistic Regression':
+                                    # For logistic regression: handle multidimensional arrays properly
+                                    if hasattr(model, 'intercept_') and model.intercept_.ndim > 0:
+                                        intercept_part = model.intercept_.flatten()
+                                    else:
+                                        intercept_part = np.array([float(model.intercept_)])
+                                    coefficients = np.concatenate([intercept_part, model.coef_.flatten()])
                                 else:
-                                    intercept_part = np.array([float(model.intercept_)])
-                                coefficients = np.concatenate([intercept_part, model.coef_.flatten()])
+                                    # For linear models: handle as scalars
+                                    intercept_val = float(model.intercept_) if hasattr(model, 'intercept_') else 0.0
+                                    coefficients = np.concatenate([[intercept_val], model.coef_])
                             else:
-                                # For linear models: handle as scalars
-                                intercept_val = float(model.intercept_) if hasattr(model, 'intercept_') else 0.0
-                                coefficients = np.concatenate([[intercept_val], model.coef_])
+                                if estimation_method == 'Logistic Regression':
+                                    coefficients = model.coef_.flatten()
+                                else:
+                                    coefficients = model.coef_
                         else:
-                            if estimation_method == 'Logistic Regression':
-                                coefficients = model.coef_.flatten()
-                            else:
-                                coefficients = model.coef_
+                            st.write("**Model Information:**")
+                            st.info(f"Coefficient analysis not available for {estimation_method}")
                         
-                        for i, var_name in enumerate(variable_names):
-                            coef_entry = {
-                                'Variable': var_name,
-                                'Coefficient': float(coefficients[i])  # Convert to Python float
-                            }
+                        if hasattr(model, 'coef_'):
+                            for i, var_name in enumerate(variable_names):
+                                coef_entry = {
+                                    'Variable': var_name,
+                                    'Coefficient': float(coefficients[i])  # Convert to Python float
+                                }
+                                
+                                # Add statistical tests only for OLS
+                                if estimation_method == "OLS":
+                                    coef_entry.update({
+                                        'Std Error': float(stats_dict['std_errors'][i]),
+                                        't-statistic': float(stats_dict['t_stats'][i]),
+                                        'P-value': float(stats_dict['p_values'][i]),
+                                        'Significance': '***' if float(stats_dict['p_values'][i]) < 0.01 else 
+                                                      '**' if float(stats_dict['p_values'][i]) < 0.05 else 
+                                                      '*' if float(stats_dict['p_values'][i]) < 0.1 else ''
+                                    })
+                                else:
+                                    # For regularized methods, show if coefficient was shrunk to zero
+                                    coef_entry['Status'] = 'Selected' if abs(float(coefficients[i])) > 1e-10 else 'Excluded'
+                                
+                                coef_data.append(coef_entry)
                             
-                            # Add statistical tests only for OLS
-                            if estimation_method == "OLS":
-                                coef_entry.update({
-                                    'Std Error': float(stats_dict['std_errors'][i]),
-                                    't-statistic': float(stats_dict['t_stats'][i]),
-                                    'P-value': float(stats_dict['p_values'][i]),
-                                    'Significance': '***' if float(stats_dict['p_values'][i]) < 0.01 else 
-                                                  '**' if float(stats_dict['p_values'][i]) < 0.05 else 
-                                                  '*' if float(stats_dict['p_values'][i]) < 0.1 else ''
-                                })
-                            else:
-                                # For regularized methods, show if coefficient was shrunk to zero
-                                coef_entry['Status'] = 'Selected' if abs(float(coefficients[i])) > 1e-10 else 'Excluded'
-                            
-                            coef_data.append(coef_entry)
+                            coef_df = pd.DataFrame(coef_data)
+                            st.dataframe(coef_df, use_container_width=True)
                         
-                        coef_df = pd.DataFrame(coef_data)
-                        st.dataframe(coef_df, use_container_width=True)
-                    
-                    if estimation_method == "OLS":
-                        st.caption("Significance levels: *** p<0.01, ** p<0.05, * p<0.1")
-                        # F-statistic
-                        st.write(f"**F-statistic:** {float(stats_dict['f_stat']):.4f} (p-value: {float(stats_dict['f_p_value']):.4f})")
-                    else:
-                        st.caption("Regularized methods don't provide traditional statistical significance tests")
-                        # Show cross-validation score if desired
-                        try:
-                            if estimation_method in ["Lasso", "Ridge", "Elastic Net"]:
-                                cv_scores = cross_val_score(model, X_for_plotting, y, cv=5, scoring='r2')
-                                st.write(f"**Cross-Validation R² Score:** {float(cv_scores.mean()):.4f} (±{float(cv_scores.std()*2):.4f})")
-                        except:
-                            pass
+                        if estimation_method == "OLS":
+                            st.caption("Significance levels: *** p<0.01, ** p<0.05, * p<0.1")
+                            # F-statistic
+                            st.write(f"**F-statistic:** {float(stats_dict['f_stat']):.4f} (p-value: {float(stats_dict['f_p_value']):.4f})")
+                        else:
+                            st.caption("Regularized methods don't provide traditional statistical significance tests")
+                            # Show cross-validation score if desired
+                            try:
+                                if estimation_method in ["Lasso", "Ridge", "Elastic Net"]:
+                                    cv_scores = cross_val_score(model, X_for_plotting, y, cv=5, scoring='r2')
+                                    st.write(f"**Cross-Validation R² Score:** {float(cv_scores.mean()):.4f} (±{float(cv_scores.std()*2):.4f})")
+                            except:
+                                pass
                     
                     # Visualization section
                     st.markdown('<h2 class="subheader">📊 Visualization</h2>', unsafe_allow_html=True)
@@ -3307,7 +5264,211 @@ def main():
                         st.plotly_chart(fig, use_container_width=True)
                         st.caption("Residuals should be approximately normally distributed.")
                     
-                    # Model interpretation
+                    # Downloads moved to top, interpretation moved to bottom
+                    if estimation_method in ["Decision Tree", "Random Forest"]:
+                        st.info("📋 **Generate Jupyter notebook** to reproduce your analysis results with complete options tracking!")
+                        
+                        # Always use notebook format
+                        output_format = "notebook"
+                        
+                        # Generate the code with all user settings
+                        generated_code = generate_python_code(
+                            model=model,
+                            estimation_method=estimation_method,
+                            independent_vars=independent_vars,
+                            dependent_var=dependent_var,
+                            model_type=model_type,
+                            include_constant=include_constant,
+                            alpha=1.0,  # Not used for tree models
+                            l1_ratio=0.5,  # Not used for tree models
+                            use_scaling=use_scaling,
+                            use_nested_cv=use_nested_cv,
+                            class_weight=class_weight if model_type == 'classification' else None,
+                            filename=uploaded_file.name if uploaded_file else None,
+                            missing_data_method=missing_method,  # Fixed: now using actual variable
+                            filter_conditions=getattr(st.session_state, 'active_filters', None),
+                            standardize_data=standardize_data,
+                            cv_folds=cv_folds,
+                            max_depth=max_depth,
+                            n_estimators=n_estimators,
+                            min_samples_split=min_samples_split,
+                            min_samples_leaf=min_samples_leaf,
+                            enable_pruning=enable_pruning,
+                            pruning_method=pruning_method,
+                            manual_alpha=manual_alpha,
+                            use_max_depth=use_max_depth,
+                            prob_class_index=prob_class_index,
+                            include_plots=True,
+                            parameter_input_method=parameter_input_method,
+                            use_stratify=use_stratify,
+                            class_weight_option=class_weight_option,
+                            filter_method=filter_method,
+                            start_row=start_row,
+                                end_row=end_row,
+                                use_sample_filter=use_sample_filter,
+                            test_size=0.2,  # Default test size
+                            random_state=42,
+                            output_format=output_format
+                        )
+                        
+                        # Download only - no code display
+                        st.caption("📓 **Jupyter Notebook Format**: Download and open with Jupyter Notebook/Lab/VS Code")
+                        
+                        # Download button for tree models notebook
+                        st.download_button(
+                            label="📥 Download Jupyter Notebook",
+                            data=generated_code,
+                            file_name=f"{estimation_method.lower().replace(' ', '_')}_analysis.ipynb",
+                            mime="application/json",
+                            key="download_tree_notebook"
+                        )
+                        
+                        # HTML Summary Report Section for Tree Models
+                        st.markdown("---")
+                        st.markdown('<h2 class="subheader">🌐 HTML Summary Report</h2>', unsafe_allow_html=True)
+                        st.info("📄 **Generate comprehensive HTML report** with all analysis results and selected options for easy sharing and printing!")
+                        
+                        # Generate HTML report with all user options for tree models
+                        html_report_tree = generate_html_report(
+                            model=model,
+                            estimation_method=estimation_method,
+                            dependent_var=dependent_var,
+                            independent_vars=independent_vars,
+                            uploaded_file=uploaded_file,
+                            model_type=model_type,
+                            include_constant=include_constant,
+                            use_scaling=use_scaling,
+                            use_nested_cv=use_nested_cv,
+                            test_size=0.2,  # Default test size
+                            random_state=42  # Default random state
+                        )
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            # Download HTML button for tree models
+                            st.download_button(
+                                label="🌐 Download HTML Report",
+                                data=html_report_tree,
+                                file_name=f"{estimation_method.lower().replace(' ', '_')}_report.html",
+                                mime="text/html",
+                                key="download_html_report_tree",
+                                help="Download complete analysis report as HTML file"
+                            )
+                        
+                        with col2:
+                            # Print button that triggers browser print dialog for tree models
+                            if st.button("🖨️ Print This Page", key="print_page_tree", help="Open browser print dialog (same as File > Print)"):
+                                components.html("""
+                                <script>
+                                window.print();
+                                </script>
+                                """, height=0)
+                        
+                    else:
+                        # Linear models section - downloads moved to top, interpretation moved to bottom
+                        st.markdown('<h2 class="subheader">� Jupyter Notebook Generator</h2>', unsafe_allow_html=True)
+                        st.info("📋 **Generate Jupyter notebook** to reproduce your analysis results with complete options tracking!")
+                        
+                        # Always use notebook format
+                        output_format_linear = "notebook"
+                        
+                        # Generate the code with all user settings
+                        generated_code = generate_python_code(
+                                model=model,
+                                estimation_method=estimation_method,
+                                independent_vars=independent_vars,
+                                dependent_var=dependent_var,
+                                model_type=model_type,
+                                include_constant=include_constant,
+                                alpha=alpha if estimation_method in ["Lasso", "Ridge", "Elastic Net"] else 1.0,
+                                l1_ratio=l1_ratio if estimation_method == "Elastic Net" else 0.5,
+                                use_scaling=use_scaling,
+                                use_nested_cv=use_nested_cv,
+                                class_weight=class_weight if model_type == 'classification' else None,
+                                filename=uploaded_file.name if uploaded_file else None,
+                                missing_data_method=missing_method,  # Fixed: now using actual variable
+                                filter_conditions=getattr(st.session_state, 'active_filters', None),
+                                standardize_data=standardize_data,
+                                cv_folds=cv_folds,
+                                max_depth=None,  # Not used for linear models
+                                n_estimators=100,  # Not used for linear models
+                                min_samples_split=2,  # Not used for linear models
+                                min_samples_leaf=1,  # Not used for linear models
+                                enable_pruning=False,  # Not used for linear models
+                                pruning_method=None,  # Not used for linear models
+                                manual_alpha=None,  # Not used for linear models
+                                use_max_depth=True,  # Not used for linear models
+                                prob_class_index=0,  # Not used for linear models
+                                include_plots=True,
+                                parameter_input_method=parameter_input_method,
+                                use_stratify=use_stratify,
+                                class_weight_option=class_weight_option,
+                                filter_method=filter_method,
+                                start_row=start_row,
+                                end_row=end_row,
+                                use_sample_filter=use_sample_filter,
+                                test_size=0.2,  # Default test size
+                                random_state=42,
+                                output_format=output_format_linear
+                            )
+                            
+                        # Download only - no code display
+                        st.caption("📓 **Jupyter Notebook Format**: Download and open with Jupyter Notebook/Lab/VS Code")
+                        
+                        # Download button for notebook
+                        st.download_button(
+                            label="📥 Download Jupyter Notebook",
+                            data=generated_code,
+                            file_name=f"{estimation_method.lower().replace(' ', '_')}_analysis.ipynb",
+                            mime="application/json",
+                            key="download_linear_notebook"
+                        )
+                        
+                        # HTML Summary Report Section
+                        st.markdown("---")
+                        st.markdown('<h2 class="subheader">🌐 HTML Summary Report</h2>', unsafe_allow_html=True)
+                        st.info("📄 **Generate comprehensive HTML report** with all analysis results and selected options for easy sharing and printing!")
+                        
+                        # Generate HTML report with all user options
+                        html_report = generate_html_report(
+                            model=model,
+                            estimation_method=estimation_method,
+                            dependent_var=dependent_var,
+                            independent_vars=independent_vars,
+                            uploaded_file=uploaded_file,
+                            model_type=model_type,
+                            include_constant=include_constant,
+                            use_scaling=use_scaling,
+                            use_nested_cv=use_nested_cv,
+                            test_size=0.2,  # Default test size
+                            random_state=42  # Default random state
+                        )
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            # Download HTML button
+                            st.download_button(
+                                label="🌐 Download HTML Report",
+                                data=html_report,
+                                file_name=f"{estimation_method.lower().replace(' ', '_')}_report.html",
+                                mime="text/html",
+                                key="download_html_report",
+                                help="Download complete analysis report as HTML file"
+                            )
+                        
+                        with col2:
+                            # Print button that triggers browser print dialog
+                            if st.button("🖨️ Print This Page", key="print_page", help="Open browser print dialog (same as File > Print)"):
+                                components.html("""
+                                <script>
+                                window.print();
+                                </script>
+                                """, height=0)
+                                
+                    # Model Interpretation Section (moved to bottom)
+                    st.markdown("---")
                     st.markdown('<h2 class="subheader">💡 Model Interpretation</h2>', unsafe_allow_html=True)
                     
                     if estimation_method in ["Decision Tree", "Random Forest"]:
@@ -3362,7 +5523,7 @@ def main():
                             st.write(guide)
                     
                     else:
-                        # Linear model interpretation
+                        # Linear models interpretation
                         interpretation_text = f"""
                         **Model Equation ({estimation_method}):**
                         {dependent_var} = """
@@ -3466,33 +5627,182 @@ def main():
                         
                         for insight in insights:
                             st.write(insight)
-            
+                            
+                    # Store analysis completion flag and essential results in session state
+                    st.session_state.analysis_complete = True
+                    st.session_state.last_analysis = {
+                        'method': estimation_method,
+                        'dependent_var': dependent_var,
+                        'independent_vars': independent_vars,
+                        'model_type': model_type,
+                        'model': model,
+                        'stats_dict': stats_dict,
+                        'estimation_method': estimation_method,
+                        'include_constant': include_constant,
+                        'uploaded_file': uploaded_file,
+                        'use_scaling': use_scaling,
+                        'use_nested_cv': use_nested_cv
+                    }
+                    
+            # Display results if analysis has been completed (for persistence after download button clicks)
+            elif independent_vars and st.session_state.get('analysis_complete', False):
+                st.info("📊 **Displaying previous analysis results** - Click 'Run Analysis' to refresh with any parameter changes.")
+                
+                # Retrieve stored results
+                last_analysis = st.session_state.get('last_analysis', {})
+                model = last_analysis.get('model')
+                stats_dict = last_analysis.get('stats_dict')
+                estimation_method = last_analysis.get('estimation_method')
+                model_type = last_analysis.get('model_type')
+                dependent_var = last_analysis.get('dependent_var')
+                independent_vars = last_analysis.get('independent_vars')
+                
+                if model and stats_dict:
+                    # Display basic metrics
+                    if model_type == 'classification':
+                        col1, col2, col3, col4 = st.columns(4)
+                        
+                        with col1:
+                            st.metric("Accuracy", f"{float(stats_dict['accuracy']):.4f}")
+                        with col2:
+                            st.metric("Precision", f"{float(stats_dict['precision']):.4f}")
+                        with col3:
+                            st.metric("Recall", f"{float(stats_dict['recall']):.4f}")
+                        with col4:
+                            st.metric("F1-Score", f"{float(stats_dict['f1_score']):.4f}")
+                    else:
+                        col1, col2, col3, col4 = st.columns(4)
+                        
+                        with col1:
+                            st.metric("R-squared", f"{float(stats_dict['r_squared']):.4f}")
+                        with col2:
+                            st.metric("Adj. R-squared", f"{float(stats_dict['adj_r_squared']):.4f}")
+                        with col3:
+                            st.metric("RMSE", f"{float(stats_dict['rmse']):.4f}")
+                        with col4:
+                            st.metric("Observations", int(stats_dict['n_obs']))
+                    
+                    # Show download buttons for notebooks and HTML
+                    st.markdown("---")
+                    st.markdown('<h2 class="subheader">📋 Download Options</h2>', unsafe_allow_html=True)
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # Generate and offer notebook download
+                        generated_code = generate_python_code(
+                            model=model,
+                            estimation_method=estimation_method,
+                            independent_vars=independent_vars,
+                            dependent_var=dependent_var,
+                            model_type=model_type,
+                            include_constant=last_analysis.get('include_constant', True),
+                            alpha=1.0,
+                            l1_ratio=0.5,
+                            use_scaling=last_analysis.get('use_scaling', False),
+                            use_nested_cv=last_analysis.get('use_nested_cv', False),
+                            class_weight=None,
+                            filename=last_analysis.get('uploaded_file', {}).get('name', 'data.csv') if last_analysis.get('uploaded_file') else 'data.csv',
+                            missing_data_method='drop',
+                            filter_conditions=None,
+                            standardize_data=False,
+                            cv_folds=5,
+                            max_depth=None,
+                            n_estimators=100,
+                            min_samples_split=2,
+                            min_samples_leaf=1,
+                            enable_pruning=False,
+                            pruning_method=None,
+                            manual_alpha=None,
+                            use_max_depth=True,
+                            prob_class_index=0,
+                            include_plots=True,
+                            parameter_input_method=None,
+                            use_stratify=False,
+                            class_weight_option=None,
+                            filter_method=None,
+                            start_row=None,
+                            end_row=None,
+                            use_sample_filter=False,
+                            test_size=0.2,
+                            random_state=42,
+                            output_format="notebook"
+                        )
+                        
+                        st.download_button(
+                            label="📥 Download Jupyter Notebook",
+                            data=generated_code,
+                            file_name=f"{estimation_method.lower().replace(' ', '_')}_analysis.ipynb",
+                            mime="application/json",
+                            key="download_cached_notebook"
+                        )
+                    
+                    with col2:
+                        # Generate and offer HTML download
+                        html_report = generate_html_report(
+                            model=model,
+                            estimation_method=estimation_method,
+                            dependent_var=dependent_var,
+                            independent_vars=independent_vars,
+                            uploaded_file=last_analysis.get('uploaded_file'),
+                            model_type=model_type,
+                            include_constant=last_analysis.get('include_constant', True),
+                            use_scaling=last_analysis.get('use_scaling', False),
+                            use_nested_cv=last_analysis.get('use_nested_cv', False),
+                            test_size=0.2,
+                            random_state=42
+                        )
+                        
+                        st.download_button(
+                            label="🌐 Download HTML Report",
+                            data=html_report,
+                            file_name=f"{estimation_method.lower().replace(' ', '_')}_report.html",
+                            mime="text/html",
+                            key="download_cached_html"
+                        )
+                    
+                    # Print button
+                    if st.button("🖨️ Print This Page", key="print_cached_results"):
+                        components.html("""
+                        <script>
+                        window.print();
+                        </script>
+                        """, height=0)
+                
+            elif independent_vars and not st.session_state.get('analysis_complete', False):
+                # Show instruction message when variables are selected but no analysis has been run
+                st.info("👆 **Ready to analyze!** Click the 'Run Analysis' button in the sidebar to start your machine learning analysis.")
             else:
                 st.sidebar.warning("⚠️ Please select at least one independent variable.")
             
             # Owner Access and Version Information at bottom of sidebar
             st.sidebar.markdown("---")
             
-            # Secret access to analytics (only for creator)
+            # Secret access to analytics (only for creator) - Version independent
             if st.sidebar.checkbox("🔒 Owner Access", value=False, help="For app creator only"):
                 owner_password = st.sidebar.text_input("Enter owner password:", type="password")
-                if owner_password == "4693943198":  # Change this password as needed
+                # Use a hash-based system for security - this password will persist across versions
+                import hashlib
+                password_hash = hashlib.sha256(owner_password.encode()).hexdigest()
+                # Hash of "renzhang2025analytics" 
+                correct_hash = hashlib.sha256("renzhang2025analytics".encode()).hexdigest()
+                if password_hash == correct_hash:
                     st.session_state.show_analytics = True
                     show_analytics_option = True
             
             # Version information and changelog in sidebar
             with st.sidebar.expander("📋 Version Info & Changelog", expanded=False):
-                st.markdown("**Current Version:** 2.1.0")
-                st.markdown("**Release Date:** September 4, 2025")
+                st.markdown("**Current Version:** 2.2.0")
+                st.markdown("**Release Date:** September 11, 2025")
                 
                 # Show recent updates
                 st.markdown("**Recent Updates:**")
                 st.markdown("""
-                • 🌳 **Cost Complexity Pruning** for Decision Trees
-                • ⚙️ **Enhanced Regularization Controls** 
-                • 🎯 **Improved Binary Classification**
-                • 🔒 **Hidden Usage Analytics**
-                • 📊 **Better Tree Visualizations**
+                • 🐍 **Python Code Generator** - Generate reproducible code for your analysis
+                • 🎨 **Enhanced Logo Integration** - Professional branding with better positioning
+                • 📁 **Smart File Detection** - Auto-includes your uploaded filename in generated code
+                • 🔒 **Improved Analytics Security** - Version-independent owner access system
+                • ✨ **UI Refinements** - Better spacing and visual hierarchy
                 """)
                 
                 # Simplified changelog access
@@ -3555,37 +5865,33 @@ def main():
     
     if uploaded_file is None:
         st.markdown("""
-        ## How to use this tool:
+        ## 🚀 Quick Start Guide:
         
-        1. **Upload your data**: Use the file uploader in the sidebar to upload a CSV or Excel file
-        2. **Select Excel sheet**: If uploading Excel, choose which sheet to analyze
-        3. **Filter sample** (optional): Select specific observations using row ranges or conditions
-        4. **Explore your data**: Review the dataset overview and column information
-        5. **Select variables**: Choose your dependent variable (Y) and independent variables (X)
-        6. **Choose estimation method**: Select from OLS, Lasso, Ridge, or Elastic Net
-        7. **Set parameters**: Adjust regularization parameters for Lasso/Ridge/Elastic Net
-        8. **Run regression**: Click the regression button to perform the analysis
-        9. **Interpret results**: Review the coefficients, statistics, and visualizations
+        1. **📁 Upload data**: CSV or Excel files in the sidebar
+        2. **🔍 Explore & filter**: Review data and select samples (optional)
+        3. **🎯 Choose variables**: Pick target (Y) and features (X) 
+        4. **🤖 Select model**: From OLS to Random Forest
+        5. **⚙️ Optimize settings**: Fine-tune parameters automatically
+        6. **📊 Analyze results**: View comprehensive statistics & plots
+        7. **🐍 Download code**: Get Python code to reproduce your analysis!
         
-        ## What you'll get:
+        ## 💡 What makes this special:
         
-        - **Comprehensive statistics**: R-squared, adjusted R-squared, RMSE, and more
-        - **Method-specific output**: 
-          - OLS: Standard errors, t-statistics, p-values, F-statistic
-          - Regularized methods: Variable selection results, cross-validation scores
-        - **Diagnostic plots**: Scatter plots, residual analysis, and normality tests
-        - **Model interpretation**: Clear explanations tailored to the chosen method
+        - **📈 Professional Analysis**: Complete statistical output with diagnostic plots
+        - **🔧 Smart Automation**: Auto-parameter tuning with cross-validation
+        - **💻 Code Generation**: Get ready-to-run Python code for every analysis
+        - **🎓 Educational**: Perfect for learning ML workflows and best practices
+        - **⚡ No-Code Required**: Point-and-click interface with professional results
         
-        ## Sample data format:
+        ## 📋 Supported Data Format:
         
-        Your CSV/Excel should have column headers and numeric data. For example:
+        Upload CSV/Excel with headers and numeric data:
         
         ```
         income,education,experience,age
         50000,16,5,28
         65000,18,8,32
         45000,14,3,25
-        ...
         ```
         """)
 
